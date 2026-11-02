@@ -1,4 +1,4 @@
-// 音の出力 (docs/KESSEL_ON_VDP.md の K5a)。SDRAM の PCM のリングを読み、I2S で出す (Tang Nano 20K の MAX98357A)
+// 音の出力 (docs/ARCHITECTURE.md の段階 K5a)。SDRAM の PCM のリングを読み、I2S で出す (Tang Nano 20K の MAX98357A)
 //
 //   標本化: 48kHz、ステレオ 16bit (2 の補数)。BCLK = 32 fs = 1.536MHz (1 フレーム 32 ビット、左 16 + 右 16)。
 //           clk (63MHz) から、累算器 (CLK_DIV_N / CLK_DIV_D ずつ足す) で BCLK の半周期を作る。63MHz x 128 / 2625 = 3.072MHz の半周期で、

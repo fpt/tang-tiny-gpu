@@ -5,7 +5,7 @@ FPGA にはもう 1 つ **3D GPU のビットストリーム** があり、フ�
 [SPECIFICATION_3D.md](SPECIFICATION_3D.md)。SPI の形式・線・システムのレジスタは両方で同じ (2 章・3 章)。
 
 [rs-kessel](https://github.com/fpt/rs-kessel) の VDP バックエンドなど、
-コマンド列を作る側が参照することを想定している。設計の経緯は [ARCHITECTURE.md](ARCHITECTURE.md)、Kessel との対応は [KESSEL_ON_VDP.md](KESSEL_ON_VDP.md)。
+コマンド列を作る側が参照することを想定している。中の作りは [ARCHITECTURE.md](ARCHITECTURE.md)、Kessel を載せるときの規則はその 13 章。
 
 この文書は E7 (Mode 7 と霧) までの RTL に合わせてある。正確な定義は RTL の先頭のコメント
 ([`gpu.sv`](../rtl/vdp/gpu.sv)、[`line_compositor.sv`](../rtl/vdp/line_compositor.sv)、[`tile_layer.sv`](../rtl/vdp/tile_layer.sv)、[`mode7_layer.sv`](../rtl/vdp/mode7_layer.sv)、
@@ -68,7 +68,7 @@ FPGA にはもう 1 つ **3D GPU のビットストリーム** があり、フ�
 | クロック | 8MHz まで実機で確認。FPGA が 63MHz でサンプリングするので上限は 10MHz 程度 |
 | 電圧 | 3.3V |
 
-配線は [WIRING.md](WIRING.md) (v1) と [HARNESS2.md](HARNESS2.md) (v2)。
+配線は [HARNESS.md](HARNESS.md) (v1) と [HARNESS2.md](HARNESS2.md) (v2)。
 
 ### トランザクション
 
@@ -566,7 +566,7 @@ GPU は 63MHz。書き込みは 1 行の中で 64 ワードずつのバースト
   描くコマンドは最後の `WAIT_LINE` のあとか、`WAIT_LINE` のあいだに収まる量を置く ([`demo.py`](../tools/harness/demo.py) の並べ方が例)
 - 1 フレームのコマンドは FIFO (512 ワード) と READY で流す。READY が落ちたら待つ
 - 8bpp で、面 (タイル) と即時描画を重ねるフレームは、`CLEAR` を透過色で行い `LAYER_CTRL` bit1 を立てる。重ねないフレームは透過を切り、
-  `CLEAR` を普通の色で (KESSEL_ON_VDP.md の 2 章)
+  `CLEAR` を普通の色で (ARCHITECTURE.md の 13 章)
 
 ## 11. 検証の手がかり
 

@@ -1,4 +1,4 @@
-"""三角形のラスタライザの参照 (docs/GPU3D_PLAN.md の 3.4 節、G1)。rtl/gpu3d/tri_setup.sv・tri_engine.sv と同じ整数の計算
+"""三角形のラスタライザの参照 (docs/ARCHITECTURE.md の 8.1 節、G1)。rtl/gpu3d/tri_setup.sv・tri_engine.sv と同じ整数の計算
 
 即時モード (G1) と TBDR (G2) は、この同じセットアップの結果と走査の規則を使う。ここが「同じ絵を出す規則」の正。
 

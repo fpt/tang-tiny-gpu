@@ -1,4 +1,4 @@
-// コマンド GPU (docs/GPU_PLAN.md の M5〜M7、docs/EMU_GPU_PLAN.md の E1、docs/KESSEL_ON_VDP.md の K1・K3・K4・K5a)。コマンド FIFO から 32bit ワードのコマンドを読み、SDRAM のフレームバッファに描く
+// コマンド GPU (docs/ARCHITECTURE.md の段階 M5〜M7、E1、K1・K3・K4・K5a)。コマンド FIFO から 32bit ワードのコマンドを読み、SDRAM のフレームバッファに描く
 //
 // レジスタ (0x30..0x4F。複数バイトの値はリトルエンディアン):
 //   0x30 CMD        W  コマンドのポート。書いたバイトを 4 つずつ (リトルエンディアン) 1 ワードにして FIFO に入れる。
@@ -88,7 +88,7 @@
 module gpu #(
     parameter int SRC_W = 320,
     parameter int SRC_H = 240,
-    parameter int GPU3D = 0,             // 1: 3D GPU のコマンド (TRI、CLEAR_Z) を受ける (docs/GPU3D_PLAN.md、rtl/gpu3d/tri_engine.sv)
+    parameter int GPU3D = 0,             // 1: 3D GPU のコマンド (TRI、CLEAR_Z) を受ける (docs/SPECIFICATION_3D.md、rtl/gpu3d/tri_engine.sv)
     // コマンド FIFO。3D は 2,048 ワード (BSRAM 4 個): END_SCENE のタイルのパスのあいだに次のフレームのコマンドを受けておける
     // (512 だとすぐ満杯になり、ホストのリンクが止まって転送と描画が重ならなかった。G5 の場面で 1 フレーム 2,000〜3,000 ワード)。
     // 読み書きの番地は rd_ptr / wr_ptr の FF から直接 (BSRAM が真のデュアルポートになっても B ポートの番地に論理を挟まない)

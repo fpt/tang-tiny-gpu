@@ -11,7 +11,7 @@ PICO       := $(DOCKER_RUN) $(PICO_IMAGE)
 # --- FPGA ---
 # ビットストリームは 4 つ (成果物は build/<名前>/)。フラッシュには vdp と gpu3d の組を置き、RECONFIG で入れ替える:
 #   vdp    VDP (top.sv、HDMI)。フラッシュの 0x000000 (電源を入れるとこれ)。次は 0x100000
-#   gpu3d  3D GPU (top.sv の GPU3D = 1、docs/GPU3D_PLAN.md)。フラッシュの 0x100000。次は 0x000000
+#   gpu3d  3D GPU (top.sv の GPU3D = 1、docs/SPECIFICATION_3D.md)。フラッシュの 0x100000。次は 0x000000
 #   lcd    40 ピン RGB LCD (800x480) にテストパターン (top_lcd.sv。HDMI とピンを共用しているので別)
 #   probe  ハーネスの配線テスト (top_harness_probe.sv)
 # 再コンフィグ (multiboot): それぞれ相手の番地を「次のビットストリーム」にし (gowin_pack --multiboot_address)、設計が RECONFIG_N (ピン 9) を
@@ -197,7 +197,7 @@ bitstream-probe: build/probe/top_harness_probe.fs
 
 # 設計ごとの規則 (合成 → 配置配線 → ビットストリーム → pincheck)。$(1) は設計の名前
 # SystemVerilog は yosys-slang プラグイン (read_slang) で読む。
-# -nolutram: LUT の RAM (RAM16SDP4) は実機で値が化ける (docs/GPU3D_PLAN.md の G1)。小さい配列はフリップフロップか BSRAM に置く
+# -nolutram: LUT の RAM (RAM16SDP4) は実機で値が化ける (docs/ARCHITECTURE.md の 10 章)。小さい配列はフリップフロップか BSRAM に置く
 define design_rules
 build/$(1)/$$($(1)_TOP).json: $$(SYN_SRC) $$(GOWIN_BB)
 	@mkdir -p build/$(1)
@@ -269,7 +269,7 @@ harness-deploy: harness-fw
 	cp $(HARNESS_UF2) $(RP2_MOUNT)/
 	@echo "-> $(RP2_MOUNT)"
 
-# nextpnr の Gowin のタイミング解析の確かめ (docs/NEXTPNR_GOWIN_TIMING.md)。配置のあとと配線のあとの Max frequency を並べる
+# nextpnr の Gowin のタイミング解析の確かめ (docs/ARCHITECTURE.md の 10 章)。配置のあとと配線のあとの Max frequency を並べる
 TIMING_REPRO := tools/repro/nextpnr_gowin_timing
 timing-repro:
 	@for v in "16 0" "16 1" "32 0" "32 1" "32 2"; do \

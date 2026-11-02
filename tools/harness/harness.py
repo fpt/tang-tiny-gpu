@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ハーネスのホスト側ツール (docs/GPU_PLAN.md の M0)
+"""ハーネスのホスト側ツール (docs/ARCHITECTURE.md の段階 M0)
 
 RP2 ブリッジ (harness/firmware) と USB シリアルで話す。標準ライブラリだけで動く。
 USB を使うので Docker ではなくホスト (macOS / Linux) で直接動かす。
@@ -654,7 +654,7 @@ def fps(bridge, path, frames):
 
 def mulprobe(bridge, iterations):
     """3D GPU のビットストリームの mul_probe (0x50..: A, B は符号付き 18bit。P = 符号付きの DSP の乗算、Q = 符号なしの DSP + 符号の補正、
-    どちらも 36bit) を端の値と乱数で確かめる (docs/GPU3D_PLAN.md の G0)。符号の組み合わせごとに数える"""
+    どちらも 36bit) を端の値と乱数で確かめる (docs/ARCHITECTURE.md の段階 G0)。符号の組み合わせごとに数える"""
     import random
     vdp = Vdp(bridge)
     version = vdp.read1(REGS["VERSION"])

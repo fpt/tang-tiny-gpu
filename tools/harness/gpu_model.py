@@ -1,4 +1,4 @@
-"""コマンド GPU の参照モデルとシナリオ (docs/GPU_PLAN.md の M5)。Python 標準ライブラリだけで動く
+"""コマンド GPU の参照モデルとシナリオ (docs/ARCHITECTURE.md の段階 M5)。Python 標準ライブラリだけで動く
 
 rtl/vdp/gpu.sv と同じ規則でコマンドを解釈し、表示される面の画像と CRC を作る。
 同じシナリオから、実機 (harness.py scenario) と Verilator (make scenario) に送る 32bit ワードの列も作る。
@@ -70,7 +70,7 @@ OP_POINT, OP_DRAW_LINE, OP_CLIP, OP_BLIT = 0x05, 0x06, 0x07, 0x08
 OP_REG_WRITE, OP_WAIT_LINE, OP_WAIT_VBLANK = 0x09, 0x0A, 0x0B
 OP_VRAM_WRITE, OP_PAL_WRITE, OP_STRETCH, OP_OAM_WRITE = 0x0C, 0x0D, 0x0E, 0x0F
 OP_LIGHT_WRITE = 0x10
-OP_TRI, OP_CLEAR_Z = 0x20, 0x24           # 3D GPU (docs/GPU3D_PLAN.md、3D GPU のビットストリームだけ)
+OP_TRI, OP_CLEAR_Z = 0x20, 0x24           # 3D GPU (docs/SPECIFICATION_3D.md、3D GPU のビットストリームだけ)
 OP_BEGIN_SCENE, OP_END_SCENE = 0x25, 0x26  # 3D GPU の TBDR (G2)
 OP_SET_TEX, OP_CLUT_WRITE = 0x21, 0x28      # 3D GPU のテクスチャ (G3)
 TEX_FMT = {"16": 0, "8": 1, "4": 2}

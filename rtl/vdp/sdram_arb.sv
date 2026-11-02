@@ -1,7 +1,7 @@
-// SDRAM の調停 (4 つの利用者 -> sdram_ctrl)。docs/GPU_PLAN.md の M4, M5、docs/KESSEL_ON_VDP.md の K5a
+// SDRAM の調停 (4 つの利用者 -> sdram_ctrl)。docs/ARCHITECTURE.md の段階 M4, M5、K5a
 //   優先順位: a (表示の読み出し) > d > b (GPU の描画) > c (メモリテスト)。
 //   d は VDP では音の PCM の読み出し (1 標本 (20.8us) に 1 ワードだけなので、a の締め切りにも b の速さにもほとんど効かない)、
-//   3D GPU (docs/GPU3D_PLAN.md) では三角形の描画 (tri_engine、64 ワードまでのバースト。描いているあいだ GPU は待っている)。
+//   3D GPU (docs/ARCHITECTURE.md の 8 章) では三角形の描画 (tri_engine、64 ワードまでのバースト。描いているあいだ GPU は待っている)。
 //   どれも sdram_ctrl と同じ約束: req と we / addr / len を ack まで保持し、書き込みは wnext で次のワードに進める。
 //   許可した利用者は ack まで変えない。rvalid / wnext / ack は許可した利用者にだけ返す。rdata は sdram_ctrl から全員に配る。
 //   表示の締め切りは出力 2 ライン分 (63.5us) あり、描画のバーストは 64 ワード (約 1us) までなので、途中で止める仕組みは持たない。
