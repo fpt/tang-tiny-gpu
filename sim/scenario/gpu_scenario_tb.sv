@@ -1,4 +1,4 @@
-// シナリオをシステム全体の RTL で走らせる (docs/GPU_PLAN.md の M5、「3 通りの比較」の Verilator の分)
+// シナリオをシステム全体の RTL で走らせる (docs/ARCHITECTURE.md の段階 M5、「3 通りの比較」の Verilator の分)
 //   gpu + sdram_arb + sdram_ctrl + SDRAM の振る舞いモデル + fb_scanout + vdp_video + frame_crc。SPI は通さず、レジスタバスを直接叩く。
 //   入力 (gpu_model.py export が作る):
 //     +cmds=<file>    1 行 1 ワード (16 進) のコマンド列
@@ -7,7 +7,7 @@
 //   普通の check では、GPU が空になったあと 2 フレーム待ち、その次のフレームの CRC を記録する (実機の harness.py scenario と同じ)。
 //   印の check では、そこまでを送ったあと、印を付けたフレーム (WAIT_VBLANK、印付き) が終わるのを待ち、そのフレームを記録する。
 //   実行は make scenario (Verilator) だけ。640x480 のフレームを何枚も回すので Icarus では遅すぎる。
-//   GPU3D = 1 (make scenario TARGET=gpu3d) なら、line_compositor の代わりに fb_line (3D GPU のビットストリームと同じ表示)
+//   GPU3D = 1 (scenarios/gpu3d/ のシナリオ) なら、line_compositor の代わりに fb_line (3D GPU のビットストリームと同じ表示)
 `timescale 1ns/1ps
 module gpu_scenario_tb #(
     parameter int GPU3D = 0

@@ -1,4 +1,4 @@
-"""メガドライブの VDP の状態を、この VDP のコマンドに直す (docs/EMU_GPU_PLAN.md の E4。E5 のホスト翻訳層の下書き)
+"""メガドライブの VDP の状態を、この VDP のコマンドに直す (docs/ARCHITECTURE.md の段階 E4。E5 のホスト翻訳層の下書き)
 
 状態 (辞書):
   vram:  64KiB の bytes (メガドラの VRAM そのまま)

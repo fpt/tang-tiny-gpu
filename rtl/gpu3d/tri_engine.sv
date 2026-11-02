@@ -1,4 +1,4 @@
-// 三角形のビニング (docs/GPU3D_PLAN.md の G2)。GPU (gpu.sv、GPU3D = 1) から TRI のワード列を受け取り、セットアップして
+// 三角形のビニング (docs/ARCHITECTURE.md の段階 G2)。GPU (gpu.sv、GPU3D = 1) から TRI のワード列を受け取り、セットアップして
 // SDRAM のパラメータバッファとタイルのリストに置く。描くのは tile_engine (raster3d.sv がまとめる)。規則は tools/harness/raster.py
 //
 //   TRI: [31:24] 0x20、[23:16] フラグ (bit0 Gouraud、bit1 テクスチャ、bit3 Z)、[15:0] 単色 (RGB565)。続けて頂点ごとに {y, x} (符号付き 12.4)、

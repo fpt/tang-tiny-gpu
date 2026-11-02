@@ -9,7 +9,7 @@ Tang Nano 20K の **3D GPU のビットストリーム** を、ホスト (RP2350
 [`tri_engine.sv`](../rtl/gpu3d/tri_engine.sv)、[`tile_engine.sv`](../rtl/gpu3d/tile_engine.sv)) と、参照モデル
 ([`raster.py`](../tools/harness/raster.py) が描く規則、[`gpu_model.py`](../tools/harness/gpu_model.py) がコマンド列から画像と CRC を作る)。
 参照モデルは RTL と同じ画をピクセル単位で作る (CRC が一致する) ので、ホスト側のテストの期待値に使える。食い違いがあれば RTL が正しい。
-設計と測定の経緯は [GPU3D_PLAN.md](GPU3D_PLAN.md)。
+中の作り (TBDR の段、実装で分かったこと) は [ARCHITECTURE.md](ARCHITECTURE.md) の 8・10 章。
 
 ## 目次
 
@@ -263,7 +263,7 @@ CLUT の `index` から n 色 (1 ワードに 2 色、下位が先)。**すぐ**
 | タイルの書き出し | 1 フレーム 約 66K (画面全体) |
 | ビットストリームの切り替え | 約 1.7 秒 |
 
-測った場面 (Verilator、1 フレーム。[GPU3D_PLAN.md](GPU3D_PLAN.md) の G5 のあと): logo (239 三角形、Z) 290K、tunnel (237) 370K、room (190) 455K、
+測った場面 (Verilator、1 フレーム): logo (239 三角形、Z) 290K、tunnel (237) 370K、room (190) 455K、
 city (348、重ね描き約 3 倍) 960K。半透明は不透明と同じ速さで、Z で隠せないので重ねた枚数だけかかる (画面全体のテクスチャの重ね描きは 60fps で約 4 枚)。
 
 **リンク**: 今のハーネス (SPI 8MHz、USB の RP2040 ブリッジ) は約 764KB/s で、60fps なら 1 フレーム約 3,200 ワード

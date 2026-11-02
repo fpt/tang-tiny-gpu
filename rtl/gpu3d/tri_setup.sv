@@ -1,4 +1,4 @@
-// 三角形のセットアップ (docs/GPU3D_PLAN.md の 3.4 節、G1)。計算の規則は tools/harness/raster.py が正 (同じ整数の計算)
+// 三角形のセットアップ (docs/ARCHITECTURE.md の 8.1 節、G1)。計算の規則は tools/harness/raster.py が正 (同じ整数の計算)
 //
 //   入力 (start から done まで保持する): 頂点 3 つ (x, y は符号付き 12.4、色 {r, g, b} 8bit ずつ、z 16bit、テクスチャの {v, u} 16bit ずつ)、クリップ矩形 (ピクセル、両端を含む)
 //   出力 (done のクロックから次の start まで保持):

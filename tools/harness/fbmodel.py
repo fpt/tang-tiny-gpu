@@ -1,4 +1,4 @@
-"""フレームバッファの参照モデル (docs/GPU_PLAN.md の M4)。Python 標準ライブラリだけで動く
+"""フレームバッファの参照モデル (docs/ARCHITECTURE.md の段階 M4)。Python 標準ライブラリだけで動く
 
 rtl/vdp/fb_scanout.sv と同じ規則で、SDRAM に置く RGB565 の画像から実機の出力 (縦横 2 倍、8bit に広げた RGB) を作る。
 """

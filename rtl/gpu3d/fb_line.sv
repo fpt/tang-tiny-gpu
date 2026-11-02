@@ -1,4 +1,4 @@
-// フレームバッファの表示 (docs/GPU3D_PLAN.md の G0)。3D GPU のビットストリームで、VDP の line_compositor の代わりに使う
+// フレームバッファの表示 (docs/ARCHITECTURE.md の段階 G0)。3D GPU のビットストリームで、VDP の line_compositor の代わりに使う
 //
 //   line_compositor のビットマップ レイヤ (RGB565) と背景色・透過色だけを残したもの。面・スプライト・8bpp・ライトマップ・Mode 7 はない。
 //   ラインの頼み方 (ピクセル側のトグル)、line_start / line_num、fb_base の取り込み (base_latched)、印 (mark_toggle)、UNDERFLOW の数え方は

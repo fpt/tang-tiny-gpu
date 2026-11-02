@@ -1,4 +1,4 @@
-// タイル レイヤ 1 面 (docs/EMU_GPU_PLAN.md の E2)。line_compositor が 1 ラインごとに start で動かす
+// タイル レイヤ 1 面 (docs/ARCHITECTURE.md の段階 E2)。line_compositor が 1 ラインごとに start で動かす
 //
 //   VRAM とパレット: line_compositor が持ち、読み出しのポート (アドレスを出した次のクロックにデータ) をスプライトのパスと順番に使う
 //   タイル:   8x8 ピクセル、4bpp。1 行が 1 ワードで、ピクセル i (左から) は [31-4i -: 4]。タイル t の行 r は pat_base + t*8 + r

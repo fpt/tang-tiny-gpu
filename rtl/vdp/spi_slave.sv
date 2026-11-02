@@ -1,7 +1,7 @@
 // SPI スレーブ (mode 0, MSB first) -> レジスタバス
 //   SCK / COPI / CS はシステムクロックで同期化してサンプリングするので、SCK の High / Low はそれぞれ
 //   システムクロック 3 周期以上必要 (63MHz なら SCK 10MHz 程度まで)。
-//   CS は正論理 (High で選択)。docs/WIRING.md
+//   CS は正論理 (High で選択)。docs/SPECIFICATION.md の 2 章
 //
 // トランザクション:
 //   書き込み: CS↑ [0 | addr(7)] [data] [data] ... CS↓   (2 バイト目以降は addr, addr+1, ... へ)
