@@ -3,7 +3,7 @@
 Tang Nano 20K 上の VDP を、Linux ホストと Raspberry Pi Pico 2 から書き込み・操作・観測できるようにするためのハーネスの設計です。
 [ARCHITECTURE.md](ARCHITECTURE.md) の「レジスタバスのマスタは差し替え可能」という方針に沿って、
 Pico 2 を **レジスタバスを叩くマスタ + 観測係** として扱います。Pico 2 は最終的な VDP ホスト (RP2350) そのものなので、
-ハーネスの配線は [WIRING.md](WIRING.md) の配線をそのまま拡張したものになります。
+ハーネスの SPI と IRQ の線は、そのまま本番の配線にもなります。
 
 ## 目的
 
@@ -115,15 +115,15 @@ Pico 2 と Tang Nano 20K はそれぞれ Linux ホストの USB から給電し�
 
 ### ピン割り当て
 
-SCK〜IRQ は [WIRING.md](WIRING.md) と同じです。ハーネス用に観測線と RESET、LED を足しています。
+SCK〜IRQ が SPI の本体 (形式は [SPECIFICATION.md](SPECIFICATION.md) の 2 章) で、ハーネス用に観測線と RESET、LED を足しています。
 
 | 信号 | 向き | Tang Nano ピン | Pico 2 GPIO | Pico 2 物理ピン | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| SCK | Pico → FPGA | 73 | GP2 (SPI0 SCK) | 4 | WIRING.md と同じ |
-| COPI | Pico → FPGA | 74 | GP3 (SPI0 TX) | 5 | 同上 |
-| CIPO | FPGA → Pico | 75 | GP4 (SPI0 RX) | 6 | 同上 |
-| CS | Pico → FPGA | 72 | GP5 | 7 | 同上。GPIO で制御 |
-| IRQ | FPGA → Pico | 71 | GP6 | 9 | 同上。VBLANK 割り込み |
+| SCK | Pico → FPGA | 73 | GP2 (SPI0 SCK) | 4 | |
+| COPI | Pico → FPGA | 74 | GP3 (SPI0 TX) | 5 | |
+| CIPO | FPGA → Pico | 75 | GP4 (SPI0 RX) | 6 | |
+| CS | Pico → FPGA | 72 | GP5 | 7 | GPIO で制御 (トランザクションのあいだ上げたまま) |
+| IRQ | FPGA → Pico | 71 | GP6 | 9 | VBLANK 割り込み (または READY) |
 | VSYNC | FPGA → Pico | 42 | GP7 | 10 | `video_timing` の vsync をそのまま出す |
 | HEARTBEAT | FPGA → Pico | 41 | GP8 | 11 | フレームごとにトグル (30Hz 方形波) |
 | ERROR | FPGA → Pico | 48 | GP9 | 12 | コマンド FIFO あふれなど。将来は SDRAM 初期化失敗も |
@@ -134,9 +134,9 @@ SCK〜IRQ は [WIRING.md](WIRING.md) と同じです。ハーネス用に観測�
 
 Tang Nano 側のピン選定:
 
-- 73, 74, 75, 72, 71: WIRING.md と同じ (どのオンボード部品ともつながっていない)
+- 73, 74, 75, 72, 71: どのオンボード部品ともつながっていない (SD カード 85/80、LCD、I2S アンプ 56/54/55/51、WS2812 79、DDC 52/53 を避けた)
 - 42, 41, 48: 40 ピン LCD コネクタと共用。LCD を使わない前提で借りる
-- 86: WIRING.md で予備としていたピン。RESET に使う
+- 86: どの部品ともつながっていない残りのピン。RESET に使う
 - 15〜20: オンボード LED。ヘッダにも出ているので FPGA 側のピンを追加消費せずに読める
 - 76: GCLK 入力なので引き続き温存
 - 69, 70: BL616 の UART。ヘッダには出ていないので配線不要 (Linux ホストが USB 経由で受ける)
@@ -219,7 +219,7 @@ Pico 2 に SSD1306 の I2C OLED (128x64 または 128x32) をつなぎ、ハー�
 - 220Ω × 50pF なら立ち上がり 25ns 程度。SCK を 10MHz 以上に上げるときは SPI 線を 100Ω へ落とす (衝突時 33mA になるので、ピン方向の検査を通っていることが前提)
 - 実装はブレッドボード上で Pico 2 と Tang Nano の間に抵抗を並べる。理想は各ボードのヘッダのすぐ横だが、片端にまとめても実用上は困らない
 - 集合抵抗を使うなら **独立型 (アイソレーテッド型)** に限る。よくある SIP の 1 ピン共通型 (バスド型) は片側が全部つながっているので直列には使えない。DIP 16 ピン 8 素子独立型 (Bourns 4116R-2 など) ならブレッドボードに挿して向かい合う 2 ピンが 1 本の抵抗になる。本数は増えるが普通のリード抵抗 15 本でも構わない
-- 本番の配線 (WIRING.md) でも同じ考え方で SPI 線に抵抗を入れておくとよい
+- 本番の配線でも同じ考え方で SPI 線に抵抗を入れておくとよい
 
 使わないもの:
 
@@ -254,7 +254,7 @@ Pico 2 に SSD1306 の I2C OLED (128x64 または 128x32) をつなぎ、ハー�
 
 ### 制約ファイルに足す内容
 
-WIRING.md の SPI 分に加えて `constraints/tangnano20k.cst` へ追加します。
+SPI と IRQ に加えて `constraints/tangnano20k.cst` へ追加します。
 
 ```text
 // ハーネス観測用 (docs/HARNESS.md)
@@ -392,7 +392,7 @@ USB の接続が切れていても読めるように、Pico 2 が自分で観測
 ### RP2 ブリッジとホストツール (実装済み)
 
 RP2 には [`harness/firmware`](../harness/firmware/src/main.c) のブリッジを一度だけ書き込み、以降はホストの
-[`tools/harness/harness.py`](../tools/harness/harness.py) から操作します ([GPU_PLAN.md](GPU_PLAN.md) の M0)。
+[`tools/harness/harness.py`](../tools/harness/harness.py) から操作します。
 ブリッジは GPU のレジスタやコマンドの意味を知らず、SPI のバイト列を素通しするだけなので、GPU を作り変えても書き換える必要がありません。
 
 ```bash

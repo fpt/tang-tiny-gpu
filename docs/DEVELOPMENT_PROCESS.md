@@ -133,14 +133,15 @@ tang-verilog で見つかったバグはきれいにこの 2 種類に分かれ�
 
 計画の文書には必ず「結果」の節を設け、測定値と、計画からずれた点とその理由を書く。次の計画はその数字から外挿する。
 
-- tang-verilog: GPU_PLAN.md / EMU_GPU_PLAN.md / KESSEL_ON_VDP.md の各段階に「◯ の結果 ✅」。SPECIFICATION.md は結果から書き起こした
+- tang-tiny-gpu: 計画の文書 (M / E / K / G の段階) の各段階に「◯ の結果 ✅」を書き、SPECIFICATION.md / SPECIFICATION_3D.md はその結果から書き起こした。
+  段階が終わったあと、計画の文書は消し、まだ有効な設計と教訓だけを ARCHITECTURE.md に移した
 - 「E7 の LUT は見込みの 2 倍。理由はレジスタを 2 組持つこと…」のように、ずれの理由まで書くと次の見積もりの精度が上がる
 
 ### 2.6 作る側と見る側を分け、周期を変える
 
 PR 単位で動く作り手には、横断的な傾向 (資源の軌道、別の層との不一致、予算の残り) が見えにくい。マイルストーンごとに別の視点で読む役を置く。
 
-- レビューは文書 (`pre_M5_review.md`、`pre_E3_review.md`、`pre_E5_review.md`、`pre_K5_review.md`、`pre_G4_review.md`) にして、作り手が項目ごとに採る・退けるを決め、その理由を計画に書き残す。書き残したらレビューの文書は計画に畳んで消す
+- レビューは文書 (`pre_M5_review.md`、`pre_E3_review.md`、`pre_E5_review.md`、`pre_K5_review.md`、`pre_G4_review.md`、`pre_G6_review.md`) にして、作り手が項目ごとに採る・退けるを決め、その理由を計画に書き残す。書き残したらレビューの文書は計画に畳んで消す
 - 退けた理由が残ると、設計判断の記録になる (「`DRAW_TILEMAP` は E2 で不要、opcode は予約」)
 - 見る側の役は LLM でも人でもよい。tang-verilog では作り手がエージェント、見る側が別のセッションの LLM と人だった
 
@@ -281,6 +282,6 @@ flowchart LR
 | `tools/gpu_model.py`、`scenarios/*.json` | 実行できる仕様とテスト。3 つの経路で同じものを走らせる |
 | `sim/` (Verilator、`tb_*`) | 内側のループ。最悪ラインのクロック数もここで数える |
 | `docs/SPECIFICATION.md` | 測定から書き起こした仕様。同じ絵を出す規則、プロファイルごとの予算 |
-| `docs/GPU_PLAN.md`、`EMU_GPU_PLAN.md`、`KESSEL_ON_VDP.md` | 計画と「結果」。閉じた項目と理由 |
+| 計画の文書 (段階が終わったら消す) → `docs/ARCHITECTURE.md` | 計画と「結果」。閉じた項目と理由。終わったあとは有効な設計と教訓だけを残す |
 | `docs/pre_*_review.md` (後に計画に畳み込み) | 見る側の文書。採る・退けるの記録 |
 | CI | 3 経路のテスト、資源と最悪ラインの記録、`$buf` の grep、予算の閾値 |
