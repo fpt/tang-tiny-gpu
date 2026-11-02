@@ -2,42 +2,43 @@
 
 ![3D GPU のビットストリームで描いた場面 (実機の HDMI キャプチャ): ロゴ、トンネル、映り込む玉の部屋、夜の街](docs/images/g5_scenes.png)
 
-Tang Nano 20K (Gowin GW2AR-18) と RP2350 で、レトロゲーム機の VDP のようなものを作るためのプロジェクトです。
+Tang Nano 20K (Gowin GW2AR-18) の FPGA で、レトロゲーム機風の小さな GPU を作るプロジェクトです。ホスト CPU は RP2350 を想定しています。
 
-- FPGA 側 (Tang Nano 20K): VDP 本体。今は HDMI (DVI) に 640x480@60Hz の映像を出す
-- RP2350 側: ホスト CPU 役。SPI などで VDP にコマンドを送る (予定)
+FPGA には **2 つのビットストリーム** があり、フラッシュに一緒に置いて、ホストが **`RECONFIG` レジスタで入れ替えます** (約 1.7 秒)。
 
-ツールはすべてオープンソースのものを Docker コンテナ内で動かします。ホストに必要なのは Docker と make だけです
-(ボードへの書き込みだけは例外です。下の「書き込み」を参照)。
+| ビットストリーム | 中身 | 仕様 |
+| --- | --- | --- |
+| **VDP** (電源を入れるとこれ) | 2D: SDRAM のフレームバッファに描くコマンド GPU (図形・BLIT・拡大縮小)、タイルの面 2 枚とウィンドウ、スプライト 128 個、Mode 7 と霧、ライトマップ、PCM の音 | [docs/SPECIFICATION.md](docs/SPECIFICATION.md) |
+| **3D GPU** | 3D: 三角形 (Gouraud、テクスチャ 16 / 8 / 4bpp + CLUT、Z、半透明 4 式) をタイルベースの遅延描画 (TBDR) で描く。PS1 程度 | [docs/SPECIFICATION_3D.md](docs/SPECIFICATION_3D.md) |
 
-## ドキュメント
+どちらも 320 x 240 の画を 640 x 480 @ 60Hz の HDMI (DVI) に出し、ホストとは同じ SPI のレジスタとコマンド FIFO でつながります。
 
-- [docs/SPECIFICATION.md](docs/SPECIFICATION.md): アプリケーション開発者向けの仕様 (接続、レジスタ、コマンド、データ形式、タイミング、制限)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): 設計方針と今の実装 (レジスタバス、レジスタマップ、クロック、SDRAM)
-- [docs/GPU_PLAN.md](docs/GPU_PLAN.md): SDRAM フレームバッファの tiny-GPU の開発計画 (ハーネスで検証しながら進める)
-- [docs/WIRING.md](docs/WIRING.md): RP2350 と Tang Nano 20K の配線・SPI ピン割り当て
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): 開発環境の補足
+- ツールはすべてオープンソース (Yosys + yosys-slang、nextpnr-himbaechel、apicula) で、Docker のコンテナの中で動かします。ホストに要るのは Docker と make と、
+  ボードへの書き込みの `openFPGALoader` だけです
+- 機能はどれも **参照モデル (Python) = Verilator = 実機** のフレームの CRC で確かめています ([docs/HARNESS.md](docs/HARNESS.md))
 
 ## 状態
 
-- 実機 (Tang Nano 20K + HDMI) で、SPI のハーネス (RP2040-Zero) からコマンド GPU (図形・BLIT)、ライン合成、タイル レイヤが動いている。
-  すべて 参照モデル = Verilator = 実機 の CRC で確かめている ([docs/HARNESS.md](docs/HARNESS.md))
-- 進み具合: コマンド GPU は [docs/GPU_PLAN.md](docs/GPU_PLAN.md) (M0〜M9 済み、M8 はやめた)、エミュレータ向けのタイル/スプライト エンジンは
-  [docs/EMU_GPU_PLAN.md](docs/EMU_GPU_PLAN.md) (E1〜E4・E7 (Mode 7 と霧) 済み、次は E5 のホスト翻訳層)、
-  [rs-kessel](https://github.com/fpt/rs-kessel) を載せる準備は [docs/KESSEL_ON_VDP.md](docs/KESSEL_ON_VDP.md) (K1〜K4 の VDP 側 = 8bpp の面・BLIT4・スプライトのセル順とバンク・STRETCH_BLIT・ライトマップ済み)
-- 3D GPU (タイルベース、VDP を外した別のビットストリーム `make bitstream-gpu3d`。フラッシュに VDP と一緒に置き、`RECONFIG` で入れ替える) は [docs/GPU3D_PLAN.md](docs/GPU3D_PLAN.md) (G0 の骨格、G1 の三角形 (単色・Gouraud・Z)、G2 のタイルベースの遅延描画 (TBDR)、G3 のテクスチャ、G4 の半透明、G5 の場面 (ロゴ・トンネル・映り込む玉の部屋・夜の街、`harness.py demo <場面>`) 済み)
-- 本番ホスト (RP2350) とのリンクは HSTX に決めた (EMU_GPU_PLAN.md の「本番のリンク」)。まだ作っていない
+- **VDP**: コマンド GPU ([docs/GPU_PLAN.md](docs/GPU_PLAN.md) の M0〜M9)、エミュレータ向けのタイル / スプライト エンジンと Mode 7
+  ([docs/EMU_GPU_PLAN.md](docs/EMU_GPU_PLAN.md) の E1〜E4・E7)、[rs-kessel](https://github.com/fpt/rs-kessel) を載せるための 8bpp の面・BLIT4・STRETCH_BLIT・
+  ライトマップ・音 ([docs/KESSEL_ON_VDP.md](docs/KESSEL_ON_VDP.md) の K1〜K5a) が実機で動いている
+- **3D GPU**: G0〜G5 ([docs/GPU3D_PLAN.md](docs/GPU3D_PLAN.md))。上の 4 つの場面 (ロゴ、トンネル、映り込む玉の部屋、夜の街) は GPU だけなら
+  1 フレーム 290K〜960K クロック (60Hz の 1 フレームは 1,050K) で、どれも 60fps に間に合う。今は実機のリンク (下) が律速で 30〜50fps
+- **ビットストリームの切り替え**: フラッシュの multiboot (VDP 0x000000、3D GPU 0x100000) と RECONFIG_N (ピン 9) で動いている。ハーネスは、要るビットストリームが
+  動いていなければ自分で切り替える
+- **ホストとのリンク**: 今は開発用のハーネス (USB → RP2040-Zero → SPI 8MHz、約 764KB/s)。本番は RP2350 の HSTX (37MB/s の見込み) で、
+  Pico 2 のハーネス v2 の基板を作っているところ ([docs/HARNESS2.md](docs/HARNESS2.md))。RP2350 の本番のファームウェア (`firmware/`) はまだ雛形
+- 次の判断 (G6): Tang Nano 20K のままで行くか、ECP5 に移るか ([docs/pre_G6_review.md](docs/pre_G6_review.md))
 
-## ツール
+## ドキュメント
 
-| 用途 | ツール | 入手元 |
-| --- | --- | --- |
-| 論理合成 | Yosys + yosys-slang プラグイン (SystemVerilog フロントエンド) | [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build) |
-| 配置配線 | nextpnr-himbaechel (Gowin) | 同上 |
-| ビットストリーム生成 | apicula (`gowin_pack`) | 同上 |
-| シミュレーション | Icarus Verilog / Verilator / cocotb | 同上 |
-| 書き込み | openFPGALoader | 同上 (ただしコンテナからは USB が使えない) |
-| RP2350 ファームウェア | arm-none-eabi-gcc + pico-sdk 2.3.1 + picotool | Debian パッケージ / GitHub |
+| 種類 | 文書 |
+| --- | --- |
+| 仕様 (アプリケーション開発者向け) | [SPECIFICATION.md](docs/SPECIFICATION.md) (VDP)、[SPECIFICATION_3D.md](docs/SPECIFICATION_3D.md) (3D GPU) |
+| 設計と計画 (段階ごとの結果) | [ARCHITECTURE.md](docs/ARCHITECTURE.md)、[GPU_PLAN.md](docs/GPU_PLAN.md) (M)、[EMU_GPU_PLAN.md](docs/EMU_GPU_PLAN.md) (E)、[KESSEL_ON_VDP.md](docs/KESSEL_ON_VDP.md) (K)、[GPU3D_PLAN.md](docs/GPU3D_PLAN.md) (G) |
+| ハーネスと配線 | [HARNESS.md](docs/HARNESS.md) (v1、`harness.py`)、[HARNESS2.md](docs/HARNESS2.md) (v2、Pico 2 + HSTX)、[WIRING.md](docs/WIRING.md)、[BASEBOARD.md](docs/BASEBOARD.md) |
+| ツールの注意 | [NEXTPNR_GOWIN_TIMING.md](docs/NEXTPNR_GOWIN_TIMING.md) (nextpnr の Gowin のタイミング解析の死角) |
+| 進め方 | [DEVELOPMENT_PROCESS.md](docs/DEVELOPMENT_PROCESS.md)、[DEVELOPMENT.md](docs/DEVELOPMENT.md) (開発環境)、レビュー ([pre_G4_review.md](docs/pre_G4_review.md)、[pre_G6_review.md](docs/pre_G6_review.md)) |
 
 ## セットアップ
 
@@ -45,14 +46,14 @@ Tang Nano 20K (Gowin GW2AR-18) と RP2350 で、レトロゲーム機の VDP の
 make images
 ```
 
-`docker/fpga` と `docker/pico` の 2 つのイメージを順番にビルドします (`make image-fpga` / `make image-pico` で個別にも可)。
-FPGA 側は OSS CAD Suite (約 1GB) をダウンロードするので時間がかかります。
-開発環境についての補足は [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) を参照してください。
+`docker/fpga` (OSS CAD Suite、約 1GB をダウンロード) と `docker/pico` (pico-sdk) のイメージを順番にビルドします。
+Docker Desktop の割り当てメモリが少ないとビルドで足りなくなることがあるので、並列にはしないでください。社内プロキシのある環境は [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
-### メモリについて
+ボードへの書き込みだけはホストの `openFPGALoader` を使います (macOS の Docker Desktop のコンテナからは USB が見えないため)。
 
-Docker Desktop の割り当てメモリが少ないと、イメージのビルド (特に picotool のコンパイル) でメモリが足りなくなることがあります。
-2 つのイメージは並列ではなく 1 つずつビルドしてください。
+```bash
+brew install openfpgaloader
+```
 
 ## 使い方
 
@@ -60,69 +61,67 @@ Docker Desktop の割り当てメモリが少ないと、イメージのビル�
 make help
 ```
 
+### 作る・書く
+
+| コマンド | 内容 |
+| --- | --- |
+| `make bitstream` | VDP (`build/vdp/top.fs`) と 3D GPU (`build/gpu3d/top.fs`) を作る。1 つだけなら `make bitstream-vdp` / `bitstream-gpu3d` |
+| `make flash` | 2 つをフラッシュに (VDP 0x000000、3D GPU 0x100000)。電源を入れると VDP |
+| `make prog` / `make prog-3d` | VDP / 3D GPU を SRAM に (開発中の確かめ。電源を切ると消える) |
+| `make bitstream-lcd` / `make prog-lcd` | 40 ピン RGB LCD (800x480) にテストパターンを出すビットストリーム (HDMI とピンを共用するので別) |
+
+書く前に、ハーネスが駆動するピンを FPGA が駆動しないかを `pincheck-<設計>` が自動で検査します。
+
+### 確かめる
+
 | コマンド | 内容 |
 | --- | --- |
 | `make lint` | Verilator で RTL を lint |
-| `make sim` | `sim/tb_*.sv` を全部実行 (`SIM=verilator` で Verilator を使う)。VCD は `build/sim/` に出力 |
-| `make sim-tb_tmds_encoder` | テストベンチを 1 つだけ実行 |
-| `make render` | Verilator で映像出力を回し、各フレームを `build/render/frame_*.png` に保存 |
-| `make bitstream` | 合成 → 配置配線 → VDP (`build/vdp/top.fs`) と 3D GPU (`build/gpu3d/top.fs`)。1 つだけなら `make bitstream-vdp` / `bitstream-gpu3d` |
-| `make flash` | VDP をフラッシュの 0x000000、3D GPU を 0x100000 に (電源を入れると VDP。`harness.py reconfig` か、要るときに `harness.py` が自分で入れ替える) |
-| `make prog` / `make prog-3d` | VDP / 3D GPU を SRAM に (開発中の確かめ) |
-| `make bitstream-lcd` | 40 ピン RGB LCD (800x480) に HDMI と同じテストパターンを出す → `build/lcd/top_lcd.fs` (`make prog-lcd` で書き込み) |
-| `make scenario SCENARIO=scenarios/m5_basic.json` | GPU のシナリオをシステム全体の RTL (Verilator) で走らせ、参照モデルの CRC と比べる。実機は `harness.py scenario` |
-| `make render FREEZE=1` | アニメーションを止めた参照画像と各フレームの CRC (`frames.json`) を `build/render_frozen/` に (実機の `FRAME_CRC` と比べる) |
-| `make render-lcd` | LCD 版の映像を `build/render_lcd/frame_*.png` に保存 |
-| `make harness-fw` / `python3 tools/harness/harness.py <cmd>` | ハーネスの RP2 ブリッジとホストツール (`status` / `selftest` / `memtest` / `frametest` / `fbtest` / `prog` など)。詳細は [docs/HARNESS.md](docs/HARNESS.md) |
-| `make prog` / `make flash` | Tang Nano 20K の SRAM / Flash に書き込み (書く前に、ハーネスのピンと衝突しないかを `pincheck-<設計>` が自動で検査する) |
-| `make fw` | RP2350 ファームウェアをビルド (`firmware/build/vdp_host.uf2`) |
-| `make shell` / `make shell-pico` | 各コンテナのシェルに入る |
-| `make zip` | 別環境へ持っていくためのソース一式を `dist/<ディレクトリ名>.zip` に作成 (ホストの git と zip を使用) |
+| `make sim` / `make sim-tb_<名前>` | テストベンチ (`sim/tb_*.sv`、Icarus Verilog。`SIM=verilator` も)。VCD は `build/sim/` |
+| `make scenario SCENARIO=scenarios/…json` | シナリオ (コマンド列) をシステム全体の RTL (Verilator) で走らせ、参照モデルの CRC と比べる。`scenarios/gpu3d/` は 3D GPU の構成 |
+| `make render` / `make render-lcd` | 映像出力を PNG に (`build/render/`)。`FREEZE=1` で実機の `FRAME_CRC` と比べる参照 |
 
-### 波形を見る
+### 実機で動かす (ハーネス)
 
-GTKWave は GUI ツールなので、macOS 上の Docker からは簡単には開けません。ローカルに何も入れずに見るなら
-[Surfer のブラウザ版](https://app.surfer-project.org/) で `build/sim/*.vcd` を開いてください。
+ハーネス (RP2040-Zero のブリッジ、`make harness-fw` / `make harness-deploy`) をつなぎ、ホストの `tools/harness/harness.py` から操作します。
 
-### 書き込み
+| コマンド | 内容 |
+| --- | --- |
+| `python3 tools/harness/harness.py selftest` | 配線・SPI・IRQ・SDRAM などの自己診断 |
+| `python3 tools/harness/harness.py scenario scenarios/…json` | シナリオを実機で走らせ、参照モデルの CRC (と HDMI キャプチャ) と比べる |
+| `make demo` / `make demo SCENE=all` | 2D のデモ / 3D の場面 (`logo` `tunnel` `room` `city`、`all` で 10 秒ずつ)。要るビットストリームに自分で切り替える |
+| `python3 tools/harness/harness.py reconfig` | VDP と 3D GPU を入れ替える |
 
-macOS 上の Docker Desktop のコンテナからは USB デバイスにアクセスできないため、`make prog` だけはホストの `openFPGALoader` を使います。
+ほかのコマンド (`fps`、`memtest`、`frametest` など) は [docs/HARNESS.md](docs/HARNESS.md)。
 
-```bash
-brew install openfpgaloader
-```
+### その他
 
-ホストに何も入れたくない場合は、Gowin 公式の Programmer を使う方法もあります。
+| コマンド | 内容 |
+| --- | --- |
+| `make fw` | RP2350 のファームウェア (`firmware/`、雛形) |
+| `make timing-repro` | nextpnr の Gowin のタイミング解析の確かめ ([docs/NEXTPNR_GOWIN_TIMING.md](docs/NEXTPNR_GOWIN_TIMING.md)) |
+| `make shell` / `make shell-pico` | コンテナのシェル |
+| `make zip` | ソース一式を `dist/<ディレクトリ名>.zip` に |
 
-RP2350 は BOOTSEL ボタンを押しながら USB 接続し、出てきたドライブに `firmware/build/vdp_host.uf2` をコピーすれば書き込めます (ツール不要)。
-ボードを変えるときは `make fw PICO_BOARD=<ボード名>`、RISC-V コア (Hazard3) を使うときは `make fw PICO_PLATFORM=rp2350-riscv` です。
+波形は [Surfer のブラウザ版](https://app.surfer-project.org/) で `build/sim/*.vcd` を開くと、ホストに何も入れずに見られます。
 
 ## ディレクトリ構成
 
 ```
-docker/
-  fpga/Dockerfile        FPGA ツール (OSS CAD Suite)
-  pico/Dockerfile        RP2350 ツール (pico-sdk, picotool)
 rtl/
-  vdp/                   ベンダ非依存の RTL (シミュレーション可能)
-    video_timing.sv      640x480@60Hz のタイミング生成
-    vdp_core.sv          VDP コアの雛形 (カラーバー + 市松模様 + 跳ね回る四角)
-    tmds_encoder.sv      DVI の TMDS エンコーダ
-    vdp_video.sv         タイミング + コアをまとめたもの (MODE 0: 640x480 HDMI / 1: 800x480 LCD)
-  gowin/                 Gowin のプリミティブを使う部分
-    dvi_tx.sv            OSER10 + TLVDS_OBUF による DVI 送信
-    top.sv               トップ (rPLL 126MHz → CLKDIV /5 → 25.2MHz)
-    top_lcd.sv           RGB LCD 版トップ (rPLL 33MHz、800x480)
-    blackbox/            Gowin プリミティブのブラックボックス定義 (合成専用)
-constraints/
-  tangnano20k.cst        ピン配置 (HDMI)
-  tangnano20k_lcd.cst    ピン配置 (40 ピン RGB LCD)
-sim/
-  tb_*.sv                テストベンチ (Icarus Verilog / Verilator)
-  verilator/render_main.cpp  フレームを画像に書き出すシミュレータ
-firmware/                RP2350 ファームウェア (pico-sdk)
-scripts/
-  ppm2png.py             PPM → PNG 変換
+  vdp/          ベンダ非依存の RTL: SPI、レジスタ、SDRAM、コマンド GPU (gpu.sv)、ライン合成、タイル / スプライト / Mode 7、音、TMDS
+  gpu3d/        ベンダ非依存の RTL: 3D GPU (raster3d、tri_setup、tri_engine、tile_engine、fb_line)
+  gowin/        Gowin のプリミティブを使う部分: トップ (top.sv。GPU3D で VDP / 3D GPU)、DVI 送信、LCD 版、配線テスト
+constraints/    ピン配置 (HDMI、LCD、配線テスト)
+sim/            テストベンチ (tb_*.sv)、システム全体のシナリオ実行 (scenario/)、映像の書き出し (verilator/)
+scenarios/      シナリオ (コマンド列と check)。gpu3d/ は 3D GPU
+tools/harness/  ホストのツール: harness.py (実機)、gpu_model.py / raster.py (参照モデル)、demo.py / demo3d.py (デモ)
+harness/        ハーネスのブリッジのファームウェア (RP2040 / RP2350)、配線表 (pins.json)、KiCad (v1、v2)
+firmware/       RP2350 の本番のファームウェア (雛形)
+scripts/        ネットリストの検査 (bsram_check、pincheck、fix_netlist) など
+tools/repro/    ツールの不具合の最小の再現
+docker/         FPGA / RP2350 のツールのイメージ
+docs/           仕様、計画、ハーネス、メモ
 ```
 
 ## ハードウェアメモ (Tang Nano 20K)
@@ -130,10 +129,12 @@ scripts/
 | 信号 | ピン |
 | --- | --- |
 | 27MHz クロック | 4 |
-| ボタン S1 / S2 (押下で 1) | 88 / 87 |
+| ボタン S1 (リセット) / S2 | 88 / 87 |
 | LED0〜5 (負論理) | 15〜20 |
 | HDMI CLK / D0 / D1 / D2 (P,N) | 33,34 / 35,36 / 37,38 / 39,40 |
+| RECONFIG_N (設計が Low にして再コンフィグ) | 9 (基板では TP1 だけ) |
 
-- デバイス: `GW2AR-LV18QN88C8/I7` (nextpnr の family は `GW2A-18C`)
-- 40 ピン RGB LCD の R/G 信号の一部 (33〜40) は HDMI と同じピンなので、HDMI と LCD は同時には使えません (別の `TARGET`)
-- ピクセルクロックは 25.2MHz で、規格値の 25.175MHz からわずかにずれています (たいていのモニタは問題なく表示します)
+- デバイス: `GW2AR-LV18QN88C8/I7` (nextpnr の family は `GW2A-18C`)。パッケージ内 SDRAM 8MiB
+- 40 ピン RGB LCD の信号の一部は HDMI と同じピンなので、HDMI と LCD は同時には使えない (別のビットストリーム)
+- ピクセルクロックは 25.2MHz で、規格の 25.175MHz からわずかにずれている (たいていのモニタは表示する)
+- ハーネスのピンの割り当ては [docs/HARNESS.md](docs/HARNESS.md) (v1) と [docs/HARNESS2.md](docs/HARNESS2.md) (v2)
