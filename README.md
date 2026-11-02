@@ -1,4 +1,4 @@
-# tang-verilog
+# tang-tiny-gpu
 
 ![3D GPU のビットストリームで描いた場面 (実機の HDMI キャプチャ): ロゴ、トンネル、映り込む玉の部屋、夜の街](docs/images/g5_scenes.png)
 
