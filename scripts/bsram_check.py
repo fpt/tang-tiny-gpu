@@ -2,7 +2,7 @@
 """真のデュアルポートの BSRAM の番地が FF から直接来ているかを、合成したネットリスト (yosys の JSON) で確かめる
 
 nextpnr の Gowin のタイミングのモデルは、真のデュアルポートの BSRAM (DPX9B / DPB) の B ポートの番地 (ADB) を見ない
-(gowin_arch_gen.py が ADB を別の種類のセルに登録している。docs/GPU3D_PLAN.md の G3・G5)。番地に論理を挟むと、
+(gowin_arch_gen.py が ADB を別の種類のセルに登録している。docs/ARCHITECTURE.md の 10 章)。番地に論理を挟むと、
 報告では間に合っていても配置によって実機で値が化ける。yosys は「組み合わせで読む RAM の番地が FF」のとき、
 その FF を RAM に取り込んで、FF の D 入力 (論理) を番地にすることがあるので、RTL を見るだけでは分からない。
 

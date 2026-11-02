@@ -1,4 +1,4 @@
-// 1 フレームの表示ピクセルの CRC-32 (docs/GPU_PLAN.md の M2)
+// 1 フレームの表示ピクセルの CRC-32 (docs/ARCHITECTURE.md の段階 M2)
 //   DE 中のピクセルを R, G, B の順のバイト列とみなし、標準の CRC-32 (IEEE 802.3、反転入力・反転出力、
 //   初期値 0xFFFFFFFF、最後に全ビット反転) を計算する。Python の zlib.crc32(行優先の rgb24 バイト列) と同じ値になる。
 //   VBLANK に入ったところで crc にラッチし、crc_toggle を反転する (別クロックからの読み出し用)。

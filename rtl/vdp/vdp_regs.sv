@@ -1,4 +1,4 @@
-// VDP のレジスタ (docs/GPU_PLAN.md の M1)。レジスタバスと同じシステムクロックで動く
+// VDP のレジスタ (docs/ARCHITECTURE.md の段階 M1)。レジスタバスと同じシステムクロックで動く
 //
 //   0x00 STATUS      R  bit0: VBLANK 中, bit1: エラー (SPI のフレームエラーなど。読むとクリア)
 //   0x01 CONTROL     RW bit1: アニメーション停止 (スプライトをリセット位置に止める。比較用), bit2: IRQ 許可 (IRQ = VBLANK 中),
@@ -14,7 +14,7 @@
 //   0x0C MARK_CRC    R  印を付けたフレーム (GPU の WAIT_VBLANK、印付き) の CRC-32 (32bit、0x0C..0x0F)。frame_crc.sv
 //   (表示するフレームバッファの先頭 FB_BASE は M5 で gpu.sv の 0x44 へ移した)
 //   0x7C RECONFIG    W  0xA5 を書くと FPGA を再コンフィグする (トップが RECONFIG_N を Low にする。フラッシュの multiboot で次のビットストリームへ。
-//                       docs/GPU3D_PLAN.md の G6 の前)。ほかの値は何もしない
+//                       docs/ARCHITECTURE.md の 2 章)。ほかの値は何もしない
 //   0x7D SCRATCH     RW 書いた値がそのまま読める (SPI リンクの確認用)
 //   0x7E ID          R  0x5A
 //   0x7F VERSION     R  RTL の版

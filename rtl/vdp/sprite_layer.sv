@@ -1,4 +1,4 @@
-// スプライト (docs/EMU_GPU_PLAN.md の E3、docs/KESSEL_ON_VDP.md の K2)。line_compositor が 1 ラインごとに start で動かす
+// スプライト (docs/ARCHITECTURE.md の段階 E3、K2)。line_compositor が 1 ラインごとに start で動かす
 //
 //   OAM:  128 エントリ x 2 ワードの BSRAM (エントリ n はワード 2n と 2n+1)。GPU の OAM_WRITE が書く
 //     ワード 0: [9:0] x (符号付き、画面の左端が 0)、[25:16] y (符号付き)、[27:26] 幅 - 1 (タイル)、[29:28] 高さ - 1 (タイル)、
