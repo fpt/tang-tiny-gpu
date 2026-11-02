@@ -19,26 +19,24 @@ FPGA には **2 つのビットストリーム** があり、フラッシュに�
 
 ## 状態
 
-- **VDP**: コマンド GPU ([docs/GPU_PLAN.md](docs/GPU_PLAN.md) の M0〜M9)、エミュレータ向けのタイル / スプライト エンジンと Mode 7
-  ([docs/EMU_GPU_PLAN.md](docs/EMU_GPU_PLAN.md) の E1〜E4・E7)、[rs-kessel](https://github.com/fpt/rs-kessel) を載せるための 8bpp の面・BLIT4・STRETCH_BLIT・
-  ライトマップ・音 ([docs/KESSEL_ON_VDP.md](docs/KESSEL_ON_VDP.md) の K1〜K5a) が実機で動いている
-- **3D GPU**: G0〜G5 ([docs/GPU3D_PLAN.md](docs/GPU3D_PLAN.md))。上の 4 つの場面 (ロゴ、トンネル、映り込む玉の部屋、夜の街) は GPU だけなら
+- **VDP**: コマンド GPU (段階 M0〜M9)、エミュレータ向けのタイル / スプライト エンジンと Mode 7 (E1〜E4・E7)、
+  [rs-kessel](https://github.com/fpt/rs-kessel) を載せるための 8bpp の面・BLIT4・STRETCH_BLIT・ライトマップ・音 (K1〜K5a) が実機で動いている
+- **3D GPU**: 段階 G0〜G5。上の 4 つの場面 (ロゴ、トンネル、映り込む玉の部屋、夜の街) は GPU だけなら
   1 フレーム 290K〜960K クロック (60Hz の 1 フレームは 1,050K) で、どれも 60fps に間に合う。今は実機のリンク (下) が律速で 30〜50fps
 - **ビットストリームの切り替え**: フラッシュの multiboot (VDP 0x000000、3D GPU 0x100000) と RECONFIG_N (ピン 9) で動いている。ハーネスは、要るビットストリームが
   動いていなければ自分で切り替える
 - **ホストとのリンク**: 今は開発用のハーネス (USB → RP2040-Zero → SPI 8MHz、約 764KB/s)。本番は RP2350 の HSTX (37MB/s の見込み) で、
   Pico 2 のハーネス v2 の基板を作っているところ ([docs/HARNESS2.md](docs/HARNESS2.md))。RP2350 の本番のファームウェア (`firmware/`) はまだ雛形
-- 次の判断 (G6): Tang Nano 20K のままで行くか、ECP5 に移るか ([docs/pre_G6_review.md](docs/pre_G6_review.md))
+- 段階の名前 (M / E / K / G) の意味は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) の「段階の記録」
 
 ## ドキュメント
 
 | 種類 | 文書 |
 | --- | --- |
 | 仕様 (アプリケーション開発者向け) | [SPECIFICATION.md](docs/SPECIFICATION.md) (VDP)、[SPECIFICATION_3D.md](docs/SPECIFICATION_3D.md) (3D GPU) |
-| 設計と計画 (段階ごとの結果) | [ARCHITECTURE.md](docs/ARCHITECTURE.md)、[GPU_PLAN.md](docs/GPU_PLAN.md) (M)、[EMU_GPU_PLAN.md](docs/EMU_GPU_PLAN.md) (E)、[KESSEL_ON_VDP.md](docs/KESSEL_ON_VDP.md) (K)、[GPU3D_PLAN.md](docs/GPU3D_PLAN.md) (G) |
-| ハーネスと配線 | [HARNESS.md](docs/HARNESS.md) (v1、`harness.py`)、[HARNESS2.md](docs/HARNESS2.md) (v2、Pico 2 + HSTX)、[WIRING.md](docs/WIRING.md)、[BASEBOARD.md](docs/BASEBOARD.md) |
-| ツールの注意 | [NEXTPNR_GOWIN_TIMING.md](docs/NEXTPNR_GOWIN_TIMING.md) (nextpnr の Gowin のタイミング解析の死角) |
-| 進め方 | [DEVELOPMENT_PROCESS.md](docs/DEVELOPMENT_PROCESS.md)、[DEVELOPMENT.md](docs/DEVELOPMENT.md) (開発環境)、レビュー ([pre_G4_review.md](docs/pre_G4_review.md)、[pre_G6_review.md](docs/pre_G6_review.md)) |
+| 設計 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) (中の作り、Gowin + オープンソースのツールで分かったこと、段階の記録、rs-kessel を載せるときの規則) |
+| ハーネスと配線 | [HARNESS.md](docs/HARNESS.md) (v1、`harness.py`)、[HARNESS2.md](docs/HARNESS2.md) (v2、Pico 2 + HSTX) |
+| 進め方 | [DEVELOPMENT_PROCESS.md](docs/DEVELOPMENT_PROCESS.md)、[DEVELOPMENT.md](docs/DEVELOPMENT.md) (開発環境) |
 
 ## セットアップ
 
@@ -99,7 +97,7 @@ make help
 | コマンド | 内容 |
 | --- | --- |
 | `make fw` | RP2350 のファームウェア (`firmware/`、雛形) |
-| `make timing-repro` | nextpnr の Gowin のタイミング解析の確かめ ([docs/NEXTPNR_GOWIN_TIMING.md](docs/NEXTPNR_GOWIN_TIMING.md)) |
+| `make timing-repro` | nextpnr の Gowin のタイミング解析の確かめ ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) の 10 章) |
 | `make shell` / `make shell-pico` | コンテナのシェル |
 | `make zip` | ソース一式を `dist/<ディレクトリ名>.zip` に |
 
@@ -121,7 +119,7 @@ firmware/       RP2350 の本番のファームウェア (雛形)
 scripts/        ネットリストの検査 (bsram_check、pincheck、fix_netlist) など
 tools/repro/    ツールの不具合の最小の再現
 docker/         FPGA / RP2350 のツールのイメージ
-docs/           仕様、計画、ハーネス、メモ
+docs/           仕様、設計、ハーネス、開発の進め方
 ```
 
 ## ハードウェアメモ (Tang Nano 20K)

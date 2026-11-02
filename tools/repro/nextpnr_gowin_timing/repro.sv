@@ -1,4 +1,4 @@
-// nextpnr の Gowin のタイミング解析の確かめ (docs/NEXTPNR_GOWIN_TIMING.md)
+// nextpnr の Gowin のタイミング解析の確かめ (docs/ARCHITECTURE.md の 10 章)
 // W = 16 なら yosys は DPX9B に、W = 32 なら SDPX9B に置く。依存し合う 32bit の足し算 30 段の組み合わせ (ra) を
 //   WCHAIN 0: 読み出しの番地 (ADB)、1: 書き込みの番地 (ADA)、2: 対照 (RAM でなく FF) で受ける
 module repro #(parameter int W = 16, parameter int WCHAIN = 0) (

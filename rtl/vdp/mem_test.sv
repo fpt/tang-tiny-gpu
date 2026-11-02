@@ -1,4 +1,4 @@
-// SDRAM の自己テスト (BIST) とレジスタ経由の 1 ワード読み書き (docs/GPU_PLAN.md の M3)
+// SDRAM の自己テスト (BIST) とレジスタ経由の 1 ワード読み書き (docs/ARCHITECTURE.md の段階 M3)
 //
 // レジスタ (0x10..0x2F。複数バイトの値はリトルエンディアン):
 //   0x10 MEM_CMD        W  1: BIST 開始, 2: MEM_ADDR を読んで MEM_DATA へ, 3: MEM_DATA を MEM_ADDR へ書く

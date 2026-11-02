@@ -1,4 +1,4 @@
-// 3D GPU の描画部 (docs/GPU3D_PLAN.md の G1・G2)。gpu.sv (GPU3D = 1) からコマンドのワード列を受け、tri_engine (ビニング) と
+// 3D GPU の描画部 (docs/ARCHITECTURE.md の段階 G1・G2)。gpu.sv (GPU3D = 1) からコマンドのワード列を受け、tri_engine (ビニング) と
 // tile_engine (タイルのパス) を動かす。SDRAM は 1 つの口 (sdram_arb の d) を、動いているほうに渡す
 //
 //   0x20 TRI          シーンの中ならビニングする (描くのは END_SCENE)。シーンの外なら、その 1 つだけのシーンとして描く:

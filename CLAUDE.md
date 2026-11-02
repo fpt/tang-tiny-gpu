@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-Tang Nano 20K (FPGA, VDP 本体) + RP2350 (ホスト CPU) でレトロゲーム機風の VDP を作るプロジェクト。
-詳細と現在の状態は README.md を参照。
+Tang Nano 20K (FPGA) + RP2350 (ホスト CPU) でレトロゲーム機風の小さな GPU を作るプロジェクト。FPGA のビットストリームは VDP (2D) と 3D GPU の 2 つで、実行時に入れ替える。
+詳細と現在の状態は README.md、中の作りは docs/ARCHITECTURE.md を参照。
 
 ## 前提
 
@@ -26,12 +26,12 @@ Tang Nano 20K (FPGA, VDP 本体) + RP2350 (ホスト CPU) でレトロゲーム�
 - Tang Nano 20K の HDMI ピンは TLVDS (`TLVDS_OBUF`, `IO_TYPE=LVDS25`, p/n を個別に制約)。`synth_gowin` には `-family gw2a` が必要。迷ったら apicula の `examples/` (特に `tangnano20k.cst`, `DVI/`) を参照する
 - `rtl/vdp/` と `rtl/gpu3d/` はベンダ非依存に保つ。Gowin のプリミティブ (rPLL, CLKDIV, OSER10, TLVDS_OBUF など) は `rtl/gowin/` にだけ置く
 - **符号付きの乗算を DSP に置かせない**。yosys は `*` を Gowin の DSP (MULT9X9 / MULT18X18) に置くが、符号付き (`ASIGN` / `BSIGN`) は実機で効かず、符号なしで掛けた値になる
-  (docs/GPU3D_PLAN.md の G0)。符号付きの値は符号なしで掛けて補正する (`rtl/gpu3d/mul_probe.sv` の Q) か、シフトと加算で組む
-- **LUT の RAM (RAM16SDP4) を使わない**。オープンソースのツールで作った分散 RAM は実機で値が化ける (docs/GPU3D_PLAN.md の G1)。
+  (docs/ARCHITECTURE.md の 10 章)。符号付きの値は符号なしで掛けて補正する (`rtl/gpu3d/mul_probe.sv` の Q) か、シフトと加算で組む
+- **LUT の RAM (RAM16SDP4) を使わない**。オープンソースのツールで作った分散 RAM は実機で値が化ける (docs/ARCHITECTURE.md の 10 章)。
   Makefile の `synth_gowin -nolutram` で止めている。小さい配列はフリップフロップ、大きいものは BSRAM (同期読み出し) に置く
 - **nextpnr の Fmax の報告を信じきらない**。Gowin のタイミングのモデルは DSP (`MULT*`) の経路と、真のデュアルポートの BSRAM (`DPX9B`、幅が 32 未満の RAM はこれになる)
   の B ポートの番地 (`ADB`) を見ない。さらに配線のあとの解析は長い組み合わせの経路を落とすことがあるので、配置のあとの Max frequency も見る
-  (docs/NEXTPNR_GOWIN_TIMING.md)。長い桁上げの連鎖も報告より遅い (docs/GPU3D_PLAN.md の G3・G5)。
+  (docs/ARCHITECTURE.md の 10 章)。長い桁上げの連鎖も報告より遅い。
   DSP の乗算は 2 クロックかける (`rtl/gpu3d/smul36x18.sv`)、DPX9B の番地は両方のポートとも FF から直接 (論理を挟まない)、長い組み合わせから
   同じクロックに複数の FF に取る値 (アドレスとタグなど) は 1 段 FF に置いてから使う、長い加算の連鎖は段に分ける。
   **yosys は組み合わせで読む小さい配列の番地の FF を BSRAM に取り込み、FF の D 入力を番地にすることがある** ので RTL を見ても分からない。

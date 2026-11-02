@@ -1,4 +1,4 @@
-// 乗算器の確かめ (docs/GPU3D_PLAN.md の G0)。オープンソースのツール (yosys の synth_gowin → nextpnr-himbaechel → gowin_pack) が
+// 乗算器の確かめ (docs/ARCHITECTURE.md の段階 G0)。オープンソースのツール (yosys の synth_gowin → nextpnr-himbaechel → gowin_pack) が
 // Gowin の DSP (MULT18X18) に置いた乗算が、実機で正しく動くかをホストから確かめる
 //
 //   レジスタ (0x50..0x5F の窓の中の番号。複数バイトはリトルエンディアン):

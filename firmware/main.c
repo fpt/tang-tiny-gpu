@@ -18,7 +18,7 @@ int main(void) {
     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
-    gpio_init(PIN_CS);                 // CS は正論理 (High で選択)。docs/WIRING.md
+    gpio_init(PIN_CS);                 // CS は正論理 (High で選択)。docs/SPECIFICATION.md の 2 章
     gpio_set_dir(PIN_CS, GPIO_OUT);
     gpio_put(PIN_CS, 0);
 

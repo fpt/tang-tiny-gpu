@@ -5,12 +5,12 @@
 //   ハーネス (docs/HARNESS.md, harness/pins.json) の線もここで出す
 //   パッケージ内 SDRAM は 63MHz で動かし、SDRAM のクロックは CLKOUTP を ODDR で反転して出す。
 //   位相 (PSDA、1/16 周期 = 約 1ns 刻み) は MEM_CLK レジスタで実行時に変えられる。PSDA = 0 で以前と同じ逆相 (180°)
-//   GPU3D = 1 (make TARGET=gpu3d): VDP を外した 3D GPU のビットストリーム (docs/GPU3D_PLAN.md)。line_compositor の代わりに
+//   GPU3D = 1 (make bitstream-gpu3d): VDP を外した 3D GPU のビットストリーム (docs/ARCHITECTURE.md の 8 章)。line_compositor の代わりに
 //   fb_line (ビットマップ RGB565 + 背景色・透過色だけ) で表示し、音はない (アンプは切る)。0x50..0x5F は MUL_PROBE なら mul_probe (DSP の確かめ)。
 //   VERSION の bit7 が 1 になる
 module top #(
     parameter int GPU3D = 0,
-    parameter int MUL_PROBE = 0          // 3D GPU で 0x50 に mul_probe (DSP の確かめ、G0) を入れる (make TARGET=gpu3d MUL_PROBE=1)
+    parameter int MUL_PROBE = 0          // 3D GPU で 0x50 に mul_probe (DSP の確かめ、G0) を入れる (make bitstream-gpu3d MUL_PROBE=1)
 ) (
     input  logic       clk,          // 27MHz
     input  logic       btn_s1,       // リセット (押下で 1)
