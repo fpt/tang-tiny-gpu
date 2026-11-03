@@ -1,7 +1,7 @@
 # 3D GPU 仕様書 (アプリケーション開発者向け)
 
 Tang Nano 20K の **3D GPU のビットストリーム** を、ホスト (RP2350 など) のプログラムから使うための仕様。
-三角形を投げて、Gouraud・テクスチャ・Z・半透明で描く、PS1 程度のタイルベースの遅延描画 (TBDR) の GPU。
+三角形を投げて、Gouraud・テクスチャ・Z・半透明で描く、PS1 程度のタイルベースの描画 (TBR) の GPU。
 2D のレイヤ (タイルの面・スプライト・Mode 7) を持つ VDP は別のビットストリームで、仕様は [SPECIFICATION.md](SPECIFICATION.md)。
 2 つはフラッシュに一緒に置き、ホストが `RECONFIG` で入れ替える (2 章)。
 
@@ -9,7 +9,7 @@ Tang Nano 20K の **3D GPU のビットストリーム** を、ホスト (RP2350
 [`tri_engine.sv`](../rtl/gpu3d/tri_engine.sv)、[`tile_engine.sv`](../rtl/gpu3d/tile_engine.sv)) と、参照モデル
 ([`raster.py`](../tools/harness/raster.py) が描く規則、[`gpu_model.py`](../tools/harness/gpu_model.py) がコマンド列から画像と CRC を作る)。
 参照モデルは RTL と同じ画をピクセル単位で作る (CRC が一致する) ので、ホスト側のテストの期待値に使える。食い違いがあれば RTL が正しい。
-中の作り (TBDR の段、実装で分かったこと) は [ARCHITECTURE.md](ARCHITECTURE.md) の 8・10 章。
+中の作り (TBR の段、実装で分かったこと) は [ARCHITECTURE.md](ARCHITECTURE.md) の 8・10 章。
 
 ## 目次
 
@@ -35,7 +35,7 @@ Tang Nano 20K の **3D GPU のビットストリーム** を、ホスト (RP2350
   ライトマップ・Mode 7・音は**ない** (VDP のビットストリームにある)
 - ホストは三角形を**画面の座標**で送る (頂点の変換・照明・クリップ・並べ替えはホストの仕事。PS1 の CPU + GTE の役)。GPU は描く規則 (5 章) どおりに
   ピクセルを塗る
-- 描き方は**タイルベースの遅延描画**: `BEGIN_SCENE` と `END_SCENE` のあいだの三角形をためておき、`END_SCENE` で 32 x 32 のタイル (80 個) ごとに
+- 描き方は**タイルベースの描画 (TBR)**: `BEGIN_SCENE` と `END_SCENE` のあいだの三角形をためておき、`END_SCENE` で 32 x 32 のタイル (80 個) ごとに
   オンチップのメモリ (色・Z) で描いてから SDRAM に書き出す。Z と半透明の読み書きが SDRAM に出ない
 - 2D のコマンドのうち RGB565 で描くもの (`CLEAR` `FILL_RECT` `POINT` `DRAW_LINE` `UPLOAD` など、4 章) もある
 

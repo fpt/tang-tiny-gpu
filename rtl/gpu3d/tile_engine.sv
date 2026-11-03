@@ -1,4 +1,4 @@
-// TBDR のタイルのパス (docs/ARCHITECTURE.md の段階 G2・G3)。END_SCENE で、tri_engine がビニングしたシーンをタイル (32 x 32、横 10 x 縦 8) ごとに描く
+// TBR のタイルのパス (docs/ARCHITECTURE.md の段階 G2・G3)。END_SCENE で、tri_engine がビニングしたシーンをタイル (32 x 32、横 10 x 縦 8) ごとに描く
 //
 //   タイルの範囲 (rtx0..rtx1 x rty0..rty1) を 1 タイルずつ:
 //     1. タイルバッファ (色 1,024 x 16bit、Z 1,024 x 16bit、オンチップ) を用意する: clear_color なら色 ccol、そうでなければ描く面から読む。

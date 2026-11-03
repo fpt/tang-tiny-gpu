@@ -1,6 +1,6 @@
 {
  "name": "g2_fps",
- "description": "\u6027\u80fd (G2\u3001TBDR): \u56de\u308b\u7acb\u65b9\u4f53 (g1_fps \u3068\u540c\u3058\u4e09\u89d2\u5f62\u3092\u30b7\u30fc\u30f3\u3067)",
+ "description": "\u6027\u80fd (G2\u3001TBR): \u56de\u308b\u7acb\u65b9\u4f53 (g1_fps \u3068\u540c\u3058\u4e09\u89d2\u5f62\u3092\u30b7\u30fc\u30f3\u3067)",
  "setup": [],
  "frames": [
   [
