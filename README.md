@@ -136,3 +136,8 @@ docs/           仕様、設計、ハーネス、開発の進め方
 - 40 ピン RGB LCD の信号の一部は HDMI と同じピンなので、HDMI と LCD は同時には使えない (別のビットストリーム)
 - ピクセルクロックは 25.2MHz で、規格の 25.175MHz からわずかにずれている (たいていのモニタは表示する)
 - ハーネスのピンの割り当ては [docs/HARNESS.md](docs/HARNESS.md) (v1) と [docs/HARNESS2.md](docs/HARNESS2.md) (v2)
+
+## ライセンス
+
+[Solderpad Hardware License v2.1](https://solderpad.org/licenses/SHL-2.1/) (Apache License 2.0 をハードウェア向けに広げたもの)。
+選べば Apache License 2.0 としても使えます (`SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1`)。全文は [LICENSE.txt](LICENSE.txt)。
