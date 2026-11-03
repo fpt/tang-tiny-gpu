@@ -1,5 +1,7 @@
 # tang-tiny-gpu
 
+[English](README.md)
+
 ![3D GPU のビットストリームで描いた場面 (実機の HDMI キャプチャ): ロゴ、トンネル、映り込む玉の部屋、夜の街](docs/images/g5_scenes.png)
 
 Tang Nano 20K (Gowin GW2AR-18) の FPGA で、レトロゲーム機風の小さな GPU を作るプロジェクトです。ホスト CPU は RP2350 を想定しています。
