@@ -68,7 +68,7 @@
 //   0x20 TRI        (GPU3D = 1 のときだけ) 三角形。[23:16] フラグ (bit0 Gouraud、bit3 Z)、[15:0] 単色。続けて頂点ごとに {y, x} (12.4)、
 //                   [{r, g, b}]、[{z}]。描き方は rtl/gpu3d/tri_engine.sv、計算の規則は tools/harness/raster.py
 //   0x24 CLEAR_Z    (GPU3D = 1 のときだけ) Z バッファ (Z_BASE から 320 x 240 x 16bit) を [15:0] で塗る
-//   0x25 BEGIN_SCENE / 0x26 END_SCENE  (GPU3D = 1 のときだけ) TBDR のシーン。意味は rtl/gpu3d/raster3d.sv
+//   0x25 BEGIN_SCENE / 0x26 END_SCENE  (GPU3D = 1 のときだけ) TBR のシーン。意味は rtl/gpu3d/raster3d.sv
 //   0x21 SET_TEX / 0x28 CLUT_WRITE     (GPU3D = 1 のときだけ) テクスチャ。意味は rtl/gpu3d/raster3d.sv
 //   それ以外        エラーを立て、1 ワードのコマンドとして読み飛ばす
 //

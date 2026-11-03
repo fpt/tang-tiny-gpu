@@ -46,7 +46,7 @@ rtl/vdp/gpu.sv と同じ規則でコマンドを解釈し、表示される面�
                                                  # "rgb": ["#..", "#..", "#.."] で Gouraud、"z": [z0, z1, z2] で Z テスト / 書き込み
                                                  # "blend": "avg" / "add" / "sub" / "quarter" で半透明 (G4。Z はテストするが書かない)
       {"op": "clear_z", "value": 65535}         # Z バッファ (Z_BASE、320 x 240 x 16bit) を塗る
-      {"op": "begin_scene", "color": "#rrggbb", "clear_z": true, "write_z": false}   # TBDR のシーン (G2)。color があれば描く面を
+      {"op": "begin_scene", "color": "#rrggbb", "clear_z": true, "write_z": false}   # TBR のシーン (G2)。color があれば描く面を
                                                  # その色から、clear_z なら Z を 0xFFFF から (なければ今の面と Z_BASE を読む)。write_z で Z を書き戻す
       {"op": "end_scene"}                       # シーンをタイルごとに描く
       {"op": "upload_tex", "addr": 655360, "fmt": "16", "w": 64, "h": 64, "kind": "checker"}   # テクスチャを SDRAM に (G3)
@@ -71,7 +71,7 @@ OP_REG_WRITE, OP_WAIT_LINE, OP_WAIT_VBLANK = 0x09, 0x0A, 0x0B
 OP_VRAM_WRITE, OP_PAL_WRITE, OP_STRETCH, OP_OAM_WRITE = 0x0C, 0x0D, 0x0E, 0x0F
 OP_LIGHT_WRITE = 0x10
 OP_TRI, OP_CLEAR_Z = 0x20, 0x24           # 3D GPU (docs/SPECIFICATION_3D.md、3D GPU のビットストリームだけ)
-OP_BEGIN_SCENE, OP_END_SCENE = 0x25, 0x26  # 3D GPU の TBDR (G2)
+OP_BEGIN_SCENE, OP_END_SCENE = 0x25, 0x26  # 3D GPU の TBR (G2)
 OP_SET_TEX, OP_CLUT_WRITE = 0x21, 0x28      # 3D GPU のテクスチャ (G3)
 TEX_FMT = {"16": 0, "8": 1, "4": 2}
 SCENE_MAX_TRIS, TILE_MAX_TRIS = 4096, 1024  # 1 シーンの三角形、1 タイルのリストの上限 (超えた分は描かない)
@@ -634,7 +634,7 @@ class Model:
         self.pal = {}                                 # パレット: 番号 -> RGB565
         self.oam = {}                                 # OAM: ワードアドレス -> 32bit
         self.light = {}                               # ライトマップ: セルの番号 -> (R, G, B) の倍率
-        self.scene = None                             # TBDR のシーン (BEGIN_SCENE から END_SCENE まで): {"flags", "color", "tris"}
+        self.scene = None                             # TBR のシーン (BEGIN_SCENE から END_SCENE まで): {"flags", "color", "tris"}
         self.error = False                            # GPU_STATUS のエラーが立つ (シーンとタイルのリストの溢れ。ハーネスが check ごとに比べて消す)
         self.tex = (0, 3, 3, 0, 0)                     # 今のテクスチャ (形式, 幅の log2, 高さの log2, CLUT のずらし, base)
         self.clut = [0] * 256
@@ -928,7 +928,7 @@ class Model:
         self.mem[a] = (w & 0xFFFF) | c << 16 if x % 2 else (w & 0xFFFF0000) | c
 
     def end_scene(self):
-        """TBDR (rtl/gpu3d/tile_engine.sv と同じ結果): タイル (32 x 32、80 個) ごとに、そのタイルに触れる三角形を投入順に描く。
+        """TBR (rtl/gpu3d/tile_engine.sv と同じ結果): タイル (32 x 32、80 個) ごとに、そのタイルに触れる三角形を投入順に描く。
         BEGIN_SCENE のフラグ: bit0 描く面を色で消してから (でなければ今の面の上に)、bit1 Z を 0xFFFF から (でなければ Z_BASE から読む)、
         bit2 最後の Z を Z_BASE に書き戻す。1 シーン 4,096 個、1 タイル 1,024 個を超えた三角形はそのタイルでは描かない"""
         import raster

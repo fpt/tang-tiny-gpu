@@ -1,7 +1,7 @@
 // 3D GPU の描画部 (G1・G2、rtl/gpu3d/raster3d.sv): SDRAM の代わりのメモリ (返すまでの時間は乱数) で
-//   - 同じ乱数の三角形 (単色 / Gouraud、Z あり / なし) を即時モードと TBDR (BEGIN_SCENE / END_SCENE) で描き、描く面と Z バッファが全部同じ
-//     (即時: 面を消して Z を 0xFFFF にしてから。TBDR: 消す色 + clear_z + write_z)
-//   - TBDR の読み込み (面と Z を消さずに) で、前に描いたものの上に重なる (即時で同じ順に描いたものと同じ)
+//   - 同じ乱数の三角形 (単色 / Gouraud、Z あり / なし) を即時モードと TBR (BEGIN_SCENE / END_SCENE) で描き、描く面と Z バッファが全部同じ
+//     (即時: 面を消して Z を 0xFFFF にしてから。TBR: 消す色 + clear_z + write_z)
+//   - TBR の読み込み (面と Z を消さずに) で、前に描いたものの上に重なる (即時で同じ順に描いたものと同じ)
 //   - タイルの上限 (1 タイル 1,024 個) を超えると error が出る
 //   - テクスチャ (G3): 8 x 8 のテクスチャを 8 x 8 ピクセルに 1 対 1 で貼り、16bpp はテクセルそのまま、4bpp は CLUT (ずらし込み) の色、
 //     色 0 のテクセルは透明 (下の色が残る)
@@ -229,7 +229,7 @@ module tb_raster3d;
         expect_rect("clip", 100, 5, 21, 5, 16'h7777, 16'h0000);
         cx0 = 0; cx1 = 319; cy0 = 0; cy1 = 239;
 
-        // 1. 即時 (面を 0x1234 で、Z を 0xFFFF で) → 写し。TBDR (消す色 0x1234、clear_z、write_z) で同じに
+        // 1. 即時 (面を 0x1234 で、Z を 0xFFFF で) → 写し。TBR (消す色 0x1234、clear_z、write_z) で同じに
         make_tris(11);
         fill(draw_base, 32'h1234_1234); fill(z_base, 32'hFFFF_FFFF);
         send_tris();
@@ -241,7 +241,7 @@ module tb_raster3d;
         compare("scene (clear) vs immediate", 1);
         $display("  scene: %0d pairs, tiles: prep %0d fetch %0d mul %0d walk %0d out %0d", st_pairs, st_prep, st_fetch, st_mul, st_walk, st_out);
 
-        // 2. 読み込み: 今の面と Z の上に、別の三角形を即時と TBDR (消さない、write_z) で
+        // 2. 読み込み: 今の面と Z の上に、別の三角形を即時と TBR (消さない、write_z) で
         make_tris(23);
         snap();
         begin
@@ -250,7 +250,7 @@ module tb_raster3d;
             save_c = ref_c; save_z = ref_z;
             send_tris();                                 // 即時
             snap();
-            for (int y = 0; y < 240; y++) for (int x = 0; x < 160; x++) begin      // 元に戻して TBDR
+            for (int y = 0; y < 240; y++) for (int x = 0; x < 160; x++) begin      // 元に戻して TBR
                 mem[(int'(draw_base) + y) * 256 + x] = save_c[y][x];
                 mem[(int'(z_base) + y) * 256 + x] = save_z[y][x];
             end

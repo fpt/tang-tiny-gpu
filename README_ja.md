@@ -11,7 +11,7 @@ FPGA には **2 つのビットストリーム** があり、フラッシュに�
 | ビットストリーム | 中身 | 仕様 |
 | --- | --- | --- |
 | **VDP** (電源を入れるとこれ) | 2D: SDRAM のフレームバッファに描くコマンド GPU (図形・BLIT・拡大縮小)、タイルの面 2 枚とウィンドウ、スプライト 128 個、Mode 7 と霧、ライトマップ、PCM の音 | [docs/SPECIFICATION.md](docs/SPECIFICATION.md) |
-| **3D GPU** | 3D: 三角形 (Gouraud、テクスチャ 16 / 8 / 4bpp + CLUT、Z、半透明 4 式) をタイルベースの遅延描画 (TBDR) で描く。PS1 程度 | [docs/SPECIFICATION_3D.md](docs/SPECIFICATION_3D.md) |
+| **3D GPU** | 3D: 三角形 (Gouraud、テクスチャ 16 / 8 / 4bpp + CLUT、Z、半透明 4 式) をタイルベースの描画 (TBR) で描く。PS1 程度 | [docs/SPECIFICATION_3D.md](docs/SPECIFICATION_3D.md) |
 
 どちらも 320 x 240 の画を 640 x 480 @ 60Hz の HDMI (DVI) に出し、ホストとは同じ SPI のレジスタとコマンド FIFO でつながります。
 

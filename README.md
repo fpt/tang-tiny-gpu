@@ -11,7 +11,7 @@ The FPGA has **two bitstreams**. Both are stored in flash, and the host **switch
 | Bitstream | What it does | Specification |
 | --- | --- | --- |
 | **VDP** (loaded at power-on) | 2D: a command GPU that draws into an SDRAM framebuffer (shapes, BLIT, scaling), two tile planes and a window, 128 sprites, Mode 7 and fog, a light map, PCM audio | [docs/SPECIFICATION.md](docs/SPECIFICATION.md) |
-| **3D GPU** | 3D: triangles (Gouraud, 16 / 8 / 4bpp textures + CLUT, Z, four semi-transparency modes) drawn with tile-based deferred rendering (TBDR). Roughly PS1 class | [docs/SPECIFICATION_3D.md](docs/SPECIFICATION_3D.md) |
+| **3D GPU** | 3D: triangles (Gouraud, 16 / 8 / 4bpp textures + CLUT, Z, four semi-transparency modes) drawn with tile-based rendering (TBR). Roughly PS1 class | [docs/SPECIFICATION_3D.md](docs/SPECIFICATION_3D.md) |
 
 Both output a 320 x 240 image as 640 x 480 @ 60Hz HDMI (DVI), and both talk to the host through the same SPI registers and command FIFO.
 
