@@ -1,6 +1,7 @@
 """HDMI キャプチャと参照画像の比較 (docs/ARCHITECTURE.md の段階 M2)。Python 標準ライブラリだけで動く
 
-キャプチャ (MS2109 など) は YUV 4:2:2 のリミテッドレンジを通るので、色が少しずれ、横方向に色がにじむ。
+キャプチャ (V-Z632、MS2109 など) は YUV 4:2:2 のリミテッドレンジを通るので、色が少しずれ、横方向に色がにじむ。
+YUV から RGB に戻す式はキャプチャの石に合わせる (V-Z632 は BT.709。ffmpeg の既定の BT.601 で戻すと純色が 40 近くずれる)。
 そこで、チャンネルごとに「キャプチャ ≒ 倍率 x 参照 + オフセット」を最小二乗で求めて補正してから、
 補正後の差が許容値以内のピクセルの割合を見る。色の境目から横 2 ピクセル・縦 1 ライン以内は必ずにじむので、
 割合の計算から外し、別に数える。正しさの判定は FRAME_CRC (完全一致) で行い、
@@ -12,7 +13,8 @@ import struct
 import subprocess
 import zlib
 
-DEFAULT_DEVICE = "USB3. 0 capture"   # macOS の avfoundation での名前。Linux では /dev/video0 など
+DEFAULT_DEVICE = "V-Z632"   # macOS の avfoundation での名前 (MacroSilicon、USB 3)。Linux では /dev/video0 など
+DEFAULT_MATRIX = "bt709"    # YUV → RGB の式 (HARNESS_CAPTURE_MATRIX で変える。前の MS2109 の "USB3. 0 capture" は bt601)
 
 
 def read_png(path):
@@ -75,12 +77,14 @@ def capture(w, h, device=None, skip=5):
     デバイスは番号ではなく名前で選ぶ (番号は変わることがあり、別のカメラを開いてしまうことがある)"""
     device = device or os.environ.get("HARNESS_CAPTURE") or (
         DEFAULT_DEVICE if platform.system() == "Darwin" else "/dev/video0")
+    matrix = os.environ.get("HARNESS_CAPTURE_MATRIX") or DEFAULT_MATRIX
     if platform.system() == "Darwin":
-        src = ["-f", "avfoundation", "-framerate", "30", "-video_size", f"{w}x{h}", "-i", f"{device}:none"]
+        src = ["-f", "avfoundation", "-pixel_format", "uyvy422", "-framerate", "30", "-video_size", f"{w}x{h}",
+               "-i", f"{device}:none"]
     else:
         src = ["-f", "v4l2", "-video_size", f"{w}x{h}", "-i", device]
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", *src,
-           "-vf", f"select=gte(n\\,{skip})", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+           "-vf", f"select=gte(n\\,{skip}),scale=in_color_matrix={matrix}:in_range=tv:out_range=full", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
     if r.returncode != 0 or len(r.stdout) != w * h * 3:
         raise RuntimeError(f"capture failed ({len(r.stdout)} bytes): {r.stderr.decode(errors='replace').strip()}")
