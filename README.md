@@ -70,7 +70,7 @@ make help
 | `make bitstream` | Builds the VDP (`build/vdp/top.fs`) and the 3D GPU (`build/gpu3d/top.fs`). For one only: `make bitstream-vdp` / `bitstream-gpu3d` |
 | `make flash` | Writes both to flash (VDP at 0x000000, 3D GPU at 0x100000). The VDP starts at power-on |
 | `make prog` / `make prog-3d` | Loads the VDP / 3D GPU into SRAM (for quick checks; lost at power-off) |
-| `make bitstream-lcd` / `make prog-lcd` | A bitstream that shows a test pattern on the 40-pin RGB LCD (800x480). Separate because it shares pins with HDMI |
+| `make bitstream-lcd` / `make prog-lcd` | A bitstream that shows a test pattern on the 40-pin RGB LCD (800x480). Separate because it shares pins with HDMI. For the 4.3" 480x272 panel: `make bitstream-lcd480` / `make prog-lcd480` |
 
 Before programming, `pincheck-<design>` automatically checks that the FPGA doesn't drive any pin the harness drives.
 
@@ -81,7 +81,7 @@ Before programming, `pincheck-<design>` automatically checks that the FPGA doesn
 | `make lint` | Lints the RTL with Verilator |
 | `make sim` / `make sim-tb_<name>` | Testbenches (`sim/tb_*.sv`, Icarus Verilog; `SIM=verilator` also works). VCDs go to `build/sim/` |
 | `make scenario SCENARIO=scenarios/…json` | Runs a scenario (a command list) on the whole-system RTL (Verilator) and compares it with the reference model's CRC. `scenarios/gpu3d/` uses the 3D GPU configuration |
-| `make render` / `make render-lcd` | Renders the video output to PNG (`build/render/`). `FREEZE=1` gives the reference to compare with the hardware's `FRAME_CRC` |
+| `make render` / `make render-lcd` / `make render-lcd480` | Renders the video output to PNG (`build/render/`). `FREEZE=1` gives the reference to compare with the hardware's `FRAME_CRC` |
 
 ### Run on hardware (harness)
 

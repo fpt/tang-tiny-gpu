@@ -13,11 +13,12 @@ PICO       := $(DOCKER_RUN) $(PICO_IMAGE)
 #   vdp    VDP (top.sv、HDMI)。フラッシュの 0x000000 (電源を入れるとこれ)。次は 0x100000
 #   gpu3d  3D GPU (top.sv の GPU3D = 1、docs/SPECIFICATION_3D.md)。フラッシュの 0x100000。次は 0x000000
 #   lcd    40 ピン RGB LCD (800x480) にテストパターン (top_lcd.sv。HDMI とピンを共用しているので別)
+#   lcd480 40 ピン RGB LCD (480x272、4.3 インチ) にテストパターン (top_lcd.sv の PANEL = 1。ピンは lcd と同じ)
 #   probe  ハーネスの配線テスト (top_harness_probe.sv)
 # 再コンフィグ (multiboot): それぞれ相手の番地を「次のビットストリーム」にし (gowin_pack --multiboot_address)、設計が RECONFIG_N (ピン 9) を
 # Low にして切り替える (vdp_regs の RECONFIG、harness.py reconfig)。gowin_pack の --reconfign_as_gpio は付けない:
 # 付けるとピンが GPIO になって、Low にしても再コンフィグしない (実機で確かめた)。付けなくても設計の出力はピンを駆動でき、再コンフィグの入力として効く
-DESIGNS := vdp gpu3d lcd probe
+DESIGNS := vdp gpu3d lcd lcd480 probe
 vdp_TOP     := top
 vdp_CST     := constraints/tangnano20k.cst
 vdp_PARAMS  :=
@@ -31,11 +32,14 @@ gpu3d_FLASH  := 0x100000
 gpu3d_STRICT := 1                # 真のデュアルポートの BSRAM の番地が FF から直接でなければ止める (scripts/bsram_check.py)
 lcd_TOP     := top_lcd
 lcd_CST     := constraints/tangnano20k_lcd.cst
+lcd480_TOP    := top_lcd
+lcd480_CST    := constraints/tangnano20k_lcd.cst
+lcd480_PARAMS := -G PANEL=1
 probe_TOP   := top_harness_probe
 probe_CST   := constraints/tangnano20k_harness_probe.cst
 
 ifneq ($(origin TARGET),undefined)
-$(error TARGET はなくなりました: make bitstream (vdp と gpu3d)、make bitstream-<vdp|gpu3d|lcd|probe>、make prog / prog-3d / prog-lcd / prog-probe、make flash)
+$(error TARGET はなくなりました: make bitstream (vdp と gpu3d)、make bitstream-<vdp|gpu3d|lcd|lcd480|probe>、make prog / prog-3d / prog-lcd / prog-lcd480 / prog-probe、make flash)
 endif
 
 DEVICE   := GW2AR-LV18QN88C8/I7
@@ -69,8 +73,8 @@ RP2_MOUNT         = $(firstword $(wildcard /Volumes/RPI-RP2 /Volumes/RP2350 /med
 PICO_BOARD    ?= pico2
 PICO_PLATFORM ?= rp2350-arm-s   # rp2350-riscv にすると Hazard3 コア用
 
-.PHONY: timing-repro help images image-fpga image-pico all lint sim scenario $(addprefix sim-,$(TBS)) render render-lcd \
-	bitstream $(addprefix bitstream-,$(DESIGNS)) $(addprefix pincheck-,$(DESIGNS)) prog prog-3d prog-gpu3d prog-lcd prog-probe flash \
+.PHONY: timing-repro help images image-fpga image-pico all lint sim scenario $(addprefix sim-,$(TBS)) render render-lcd render-lcd480 \
+	bitstream $(addprefix bitstream-,$(DESIGNS)) $(addprefix pincheck-,$(DESIGNS)) prog prog-3d prog-gpu3d prog-lcd prog-lcd480 prog-probe flash \
 	demo fw harness-fw harness-deploy shell shell-pico zip clean
 
 help:
@@ -80,10 +84,10 @@ help:
 	@echo "make sim-<tb>    個別テストベンチ実行 (例: make sim-tb_tmds_encoder)"
 	@echo "make scenario    シナリオ (SCENARIO=scenarios/*.json) をシステム全体の RTL で走らせ、参照モデルの CRC と比べる"
 	@echo "                 scenarios/gpu3d/ のシナリオは 3D GPU の構成で走る"
-	@echo "make render      Verilator で映像出力を PNG 化 (build/render/, FRAMES=$(FRAMES))。make render-lcd で 800x480"
+	@echo "make render      Verilator で映像出力を PNG 化 (build/render/, FRAMES=$(FRAMES))。make render-lcd で 800x480、render-lcd480 で 480x272"
 	@echo "                 FREEZE=1 でアニメーションを止めた参照画像と CRC (frames.json) を build/render_frozen/ に"
-	@echo "make bitstream   VDP と 3D GPU のビットストリーム (build/vdp/top.fs、build/gpu3d/top.fs)。1 つだけなら make bitstream-<vdp|gpu3d|lcd|probe>"
-	@echo "make prog        VDP を SRAM に書き込み (make prog-3d / prog-lcd / prog-probe。ホストの openFPGALoader が必要。pincheck 込み)"
+	@echo "make bitstream   VDP と 3D GPU のビットストリーム (build/vdp/top.fs、build/gpu3d/top.fs)。1 つだけなら make bitstream-<vdp|gpu3d|lcd|lcd480|probe>"
+	@echo "make prog        VDP を SRAM に書き込み (make prog-3d / prog-lcd / prog-lcd480 / prog-probe。ホストの openFPGALoader が必要。pincheck 込み)"
 	@echo "make flash       VDP (0x000000) と 3D GPU (0x100000) をフラッシュに。電源を入れると VDP、harness.py reconfig で入れ替わる"
 	@echo "make demo        デモをハーネス経由で流す (既定は Ctrl-C まで、FRAMES=N で N フレーム。ホストの python3)"
 	@echo "                 SCENE=logo|tunnel|room|city で 3D の場面、SCENE=all で 4 つを 10 秒ずつくり返す。なければ M9 のデモ (VDP)。"
@@ -157,12 +161,14 @@ else
 	$(FPGA) vvp -n $(BUILD)/sim/$*.vvp
 endif
 
-# 映像を PNG に (VIDEO_MODE は vdp_video の MODE: 0 は 640x480、1 は 800x480 の LCD)
+# 映像を PNG に (VIDEO_MODE は vdp_video の MODE: 0 は 640x480、1 は 800x480 の LCD、2 は 480x272 の LCD)
 render:     RENDER_DIR := build/render$(if $(filter 1,$(strip $(FREEZE))),_frozen)
 render:     VIDEO_MODE := 0
 render-lcd: RENDER_DIR := build/render_lcd$(if $(filter 1,$(strip $(FREEZE))),_frozen)
 render-lcd: VIDEO_MODE := 1
-render render-lcd:
+render-lcd480: RENDER_DIR := build/render_lcd480$(if $(filter 1,$(strip $(FREEZE))),_frozen)
+render-lcd480: VIDEO_MODE := 2
+render render-lcd render-lcd480:
 	@mkdir -p $(RENDER_DIR)
 	$(FPGA) verilator --cc --exe --build -j 0 -O2 -Wno-fatal \
 		--top-module vdp_video -GMODE=$(VIDEO_MODE) -Mdir $(RENDER_DIR)/obj -o render \
@@ -193,6 +199,7 @@ bitstream: build/vdp/top.fs build/gpu3d/top.fs
 bitstream-vdp:   build/vdp/top.fs
 bitstream-gpu3d: build/gpu3d/top.fs
 bitstream-lcd:   build/lcd/top_lcd.fs
+bitstream-lcd480: build/lcd480/top_lcd.fs
 bitstream-probe: build/probe/top_harness_probe.fs
 
 # 設計ごとの規則 (合成 → 配置配線 → ビットストリーム → pincheck)。$(1) は設計の名前
@@ -231,6 +238,8 @@ prog-3d prog-gpu3d: pincheck-gpu3d
 	openFPGALoader -b $(BOARD) build/gpu3d/top.fs
 prog-lcd: pincheck-lcd
 	openFPGALoader -b $(BOARD) build/lcd/top_lcd.fs
+prog-lcd480: pincheck-lcd480
+	openFPGALoader -b $(BOARD) build/lcd480/top_lcd.fs
 prog-probe: pincheck-probe
 	openFPGALoader -b $(BOARD) build/probe/top_harness_probe.fs
 

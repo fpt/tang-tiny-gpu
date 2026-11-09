@@ -11,7 +11,7 @@ usage: harness.py [--port PORT] <command> [args...]
   reset [ms]       RESET を High にする
   irqwait [ms]     IRQ の立ち上がりを待つ
   raw <line>       ブリッジに 1 行そのまま送る
-  prog <design>    make prog / prog-3d / prog-lcd / prog-probe (design: vdp / gpu3d / lcd / probe。pincheck 込みで FPGA の SRAM に書き込む)
+  prog <design>    make prog / prog-3d / prog-lcd / prog-lcd480 / prog-probe (design: vdp / gpu3d / lcd / lcd480 / probe。pincheck 込みで FPGA の SRAM に書き込む)
   reg read <reg> [n]        レジスタを読む (<reg> は名前か 0x7e のような番地)
   reg write <reg> <hex>     レジスタに書く (複数バイトなら番地が 1 ずつ進む)
   selftest [--iterations N] HARNESS.md の selftest (FPGA に hdmi などの設計が入っている前提)
@@ -996,9 +996,9 @@ def main():
         if len(a.args) != 1:
             ap.error("prog <target>")
         # make の出力は標準エラーへ (標準出力は JSON だけにする)
-        progs = {"vdp": "prog", "gpu3d": "prog-3d", "3d": "prog-3d", "lcd": "prog-lcd", "probe": "prog-probe"}
+        progs = {"vdp": "prog", "gpu3d": "prog-3d", "3d": "prog-3d", "lcd": "prog-lcd", "lcd480": "prog-lcd480", "probe": "prog-probe"}
         if a.args[0] not in progs:
-            ap.error("prog <vdp|gpu3d|lcd|probe>")
+            ap.error("prog <vdp|gpu3d|lcd|lcd480|probe>")
         r = subprocess.run(["make", progs[a.args[0]]], cwd=REPO, stdout=sys.stderr)
         result = {"ok": r.returncode == 0, "design": a.args[0]}
     elif a.command in ("reg", "selftest", "memtest", "mem", "frametest", "fb", "fbtest", "scenario", "fps", "demo", "audio",

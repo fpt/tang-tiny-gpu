@@ -2,6 +2,8 @@
 //   MODE 0: 640x480@60Hz (HDMI/DVI, ピクセルクロック 25.2MHz)
 //   MODE 1: 800x480 (40 ピン RGB LCD, ピクセルクロック 33MHz で約 62Hz。
 //           タイミングは sipeed/TangNano-20K-example の rgb_lcd/lcd_800_400/cross_bar と同じ)
+//   MODE 2: 480x272 (40 ピン RGB LCD の 4.3 インチ, ピクセルクロック 9MHz で約 57Hz。
+//           タイミングは Sipeed の Tang Nano 1K/4K の LCD の例 (H 8/4/43、V 8/4/12) と同じ)
 //   fb_en のときは、テストパターンの代わりに fb_rgb (fb_scanout が x, y の 1 クロック後に出す画素) を出す
 module vdp_video #(
     parameter int MODE = 0
@@ -22,15 +24,14 @@ module vdp_video #(
     output logic       vblank,       // 表示ライン外 (VBLANK 中)
     output logic       frame_start   // フレーム先頭で 1 クロック
 );
-    localparam bit LCD      = (MODE == 1);
-    localparam int H_ACTIVE = LCD ? 800 : 640;
-    localparam int H_FP     = LCD ?  40 :  16;
-    localparam int H_SYNC   = LCD ? 128 :  96;
-    localparam int H_BP     = LCD ?  88 :  48;
-    localparam int V_ACTIVE = 480;
-    localparam int V_FP     = LCD ?   1 :  10;
-    localparam int V_SYNC   = LCD ?   3 :   2;
-    localparam int V_BP     = LCD ?  21 :  33;
+    localparam int H_ACTIVE = MODE == 1 ? 800 : MODE == 2 ? 480 : 640;
+    localparam int H_FP     = MODE == 1 ?  40 : MODE == 2 ?   8 :  16;
+    localparam int H_SYNC   = MODE == 1 ? 128 : MODE == 2 ?   4 :  96;
+    localparam int H_BP     = MODE == 1 ?  88 : MODE == 2 ?  43 :  48;
+    localparam int V_ACTIVE = MODE == 2 ? 272 : 480;
+    localparam int V_FP     = MODE == 1 ?   1 : MODE == 2 ?   8 :  10;
+    localparam int V_SYNC   = MODE == 1 ?   3 : MODE == 2 ?   4 :   2;
+    localparam int V_BP     = MODE == 1 ?  21 : MODE == 2 ?  12 :  33;
 
     logic        t_de, t_hs, t_vs, t_fs;
 
