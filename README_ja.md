@@ -68,7 +68,7 @@ make help
 | `make bitstream` | VDP (`build/vdp/top.fs`) と 3D GPU (`build/gpu3d/top.fs`) を作る。1 つだけなら `make bitstream-vdp` / `bitstream-gpu3d` |
 | `make flash` | 2 つをフラッシュに (VDP 0x000000、3D GPU 0x100000)。電源を入れると VDP |
 | `make prog` / `make prog-3d` | VDP / 3D GPU を SRAM に (開発中の確かめ。電源を切ると消える) |
-| `make bitstream-lcd` / `make prog-lcd` | 40 ピン RGB LCD (800x480) にテストパターンを出すビットストリーム (HDMI とピンを共用するので別) |
+| `make bitstream-lcd` / `make prog-lcd` | 40 ピン RGB LCD (800x480) にテストパターンを出すビットストリーム (HDMI とピンを共用するので別)。4.3 インチの 480x272 のパネルには `make bitstream-lcd480` / `make prog-lcd480` |
 
 書く前に、ハーネスが駆動するピンを FPGA が駆動しないかを `pincheck-<設計>` が自動で検査します。
 
@@ -79,7 +79,7 @@ make help
 | `make lint` | Verilator で RTL を lint |
 | `make sim` / `make sim-tb_<名前>` | テストベンチ (`sim/tb_*.sv`、Icarus Verilog。`SIM=verilator` も)。VCD は `build/sim/` |
 | `make scenario SCENARIO=scenarios/…json` | シナリオ (コマンド列) をシステム全体の RTL (Verilator) で走らせ、参照モデルの CRC と比べる。`scenarios/gpu3d/` は 3D GPU の構成 |
-| `make render` / `make render-lcd` | 映像出力を PNG に (`build/render/`)。`FREEZE=1` で実機の `FRAME_CRC` と比べる参照 |
+| `make render` / `make render-lcd` / `make render-lcd480` | 映像出力を PNG に (`build/render/`)。`FREEZE=1` で実機の `FRAME_CRC` と比べる参照 |
 
 ### 実機で動かす (ハーネス)
 

@@ -439,7 +439,7 @@ python3 tools/harness/harness.py prog vdp        # make prog (pincheck 込み。
 | `reconfig` | `RECONFIG` に `0xA5` を書いて FPGA を再コンフィグし、`VERSION` が変わって応答が戻るまでの時間を出す。フラッシュに VDP と 3D GPU の両方 (`make flash`) が要る。`demo` と `scenarios/gpu3d/` のシナリオ・`fps` は、要るビットストリームが動いていなければ自分で切り替える (結果に `switched`) |
 | `mulprobe [--iterations N]` | 3D GPU のビットストリーム (`make bitstream-gpu3d MUL_PROBE=1`) の乗算器 (`mul_probe`) を、符号の組み合わせごとに端の値と乱数で確かめる (符号付きの DSP と、符号なし + 補正) |
 | `fbtest [<png>] [--slot N] [--keep] [--no-capture]` | アップロードして表示し、`FRAME_CRC`・`UNDERFLOW`・キャプチャを参照モデル (`fbmodel.py`) と比べる |
-| `prog <vdp\|gpu3d\|lcd\|probe>` | `make prog` / `prog-3d` / `prog-lcd` / `prog-probe` |
+| `prog <vdp\|gpu3d\|lcd\|lcd480\|probe>` | `make prog` / `prog-3d` / `prog-lcd` / `prog-lcd480` / `prog-probe` |
 
 - 出力は 1 つの JSON。`"ok"` が true でなければ終了コード 1
 - **ready**: HEARTBEAT が直近 100ms 以内に立ち上がっていること。FPGA の書き込み中や、HEARTBEAT を出さない設計 (今の HDMI など) では `spi` を拒否する
