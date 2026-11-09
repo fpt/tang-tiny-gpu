@@ -1,7 +1,9 @@
-// Tang Nano 20K + 40 ピン RGB LCD (800x480) トップ
-//   27MHz -> rPLL 33MHz (ピクセル)。HDMI 版 (top.sv) と同じテストパターンを 800x480 で出す
-//   クロックとタイミングは sipeed/TangNano-20K-example の rgb_lcd/lcd_800_400/cross_bar と同じ
-module top_lcd (
+// Tang Nano 20K + 40 ピン RGB LCD トップ。HDMI 版 (top.sv) と同じテストパターンを出す
+//   PANEL 0: 800x480 (5 インチ)。27MHz -> rPLL 33MHz。sipeed/TangNano-20K-example の rgb_lcd/lcd_800_400/cross_bar と同じ
+//   PANEL 1: 480x272 (4.3 インチ)。27MHz -> rPLL 9MHz。ピンは同じ
+module top_lcd #(
+    parameter int PANEL = 0
+) (
     input  logic       clk,          // 27MHz
     input  logic       btn_s1,       // リセット (押下で 1)
     input  logic       btn_s2,
@@ -18,11 +20,12 @@ module top_lcd (
     // --- クロック生成 ---
     logic clk_pix, pll_lock;
 
+    // 33MHz: 27 / 9 x 11、VCO = 528MHz。9MHz: 27 / 3 x 1、VCO = 576MHz
     rPLL #(
         .FCLKIN("27"),
-        .IDIV_SEL(8),     // /9
-        .FBDIV_SEL(10),   // x11 -> 33MHz
-        .ODIV_SEL(16),    // VCO = 528MHz
+        .IDIV_SEL(PANEL == 1 ? 2 : 8),
+        .FBDIV_SEL(PANEL == 1 ? 0 : 10),
+        .ODIV_SEL(PANEL == 1 ? 64 : 16),
         .DEVICE("GW2AR-18C")
     ) u_pll (
         .CLKIN(clk),
@@ -47,7 +50,7 @@ module top_lcd (
     // --- 映像 ---
     logic [7:0] r, g, b;
 
-    vdp_video #(.MODE(1)) u_video (
+    vdp_video #(.MODE(PANEL == 1 ? 2 : 1)) u_video (
         .clk_pix, .rst, .freeze(1'b0), .fb_en(1'b0), .fb_rgb(24'h0), .x(), .y(), .r, .g, .b,
         .de(lcd_de), .hsync(lcd_hsync), .vsync(lcd_vsync), .vblank(), .frame_start()
     );
@@ -60,7 +63,10 @@ module top_lcd (
     assign lcd_bl  = 1'b1;
 
     // --- 動作確認用 LED (約 1Hz で流れる) ---
+    // (クロックが 9MHz のときは同じ速さになるよう 2 ビット下を見る)
     logic [24:0] div;
+    logic [2:0]  step;
     always_ff @(posedge clk_pix) div <= div + 25'd1;
-    assign led = btn_s2 ? 6'b000000 : ~(6'b1 << (div[24:22] % 3'd6));  // S2 押下で全点灯
+    assign step = PANEL == 1 ? div[22:20] : div[24:22];
+    assign led = btn_s2 ? 6'b000000 : ~(6'b1 << (step % 3'd6));  // S2 押下で全点灯
 endmodule
