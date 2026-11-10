@@ -74,8 +74,8 @@ Pico ピン配置では HSTX の 8 本が 16〜25 に連続して並ぶので、
 
 ### 2.2 v2 で動かすときに変えるもの
 
-- `HARNESS=v2` (Makefile) で配線表が `pins_v2.json`、ファームウェアが `pico2` / `rp2350-arm-s` (`harness/firmware/build_v2/`)、`pincheck` が v2 になる。
-  v2 をつないでいるあいだは `export HARNESS=v2` にしておく (`harness.py` が呼ぶ `make` にも効く)。`make bitstream` / `prog` / `prog-3d` / `flash` は
+- **v2 が既定** (Makefile の `HARNESS ?= v2`)。配線表が `pins_v2.json`、ファームウェアが `pico2` / `rp2350-arm-s` (`harness/firmware/build_v2/`)、`pincheck` が v2 になる。
+  v1 をつなぐときは `export HARNESS=v1` (`harness.py` が呼ぶ `make` にも効く)。`make bitstream` / `prog` / `prog-3d` / `flash` は
   v2 のピンの `vdp2` / `gpu3d2` (`top_v2.sv` + `constraints/tangnano20k_v2.cst`) を使う。v1 のピンの `vdp` / `gpu3d` は `pincheck` で止まる
   (71、19、20 を FPGA が駆動するため)。**フラッシュも v2 の組にしておく** (`make flash`)。v1 の組が残っていると、RECONFIG で v1 の 3D GPU が立ち上がり、
   Pico が SPI に使う 19 / 20 を LED として駆動する
@@ -88,7 +88,6 @@ Pico ピン配置では HSTX の 8 本が 16〜25 に連続して並ぶので、
 ### 2.4 配線テスト (`wiretest`、実機で確かめた)
 
 ```bash
-export HARNESS=v2
 make prog-probe2                       # FPGA に top_harness_probe_v2 (pincheck 込み)
 make harness-deploy                    # Pico 2 を BOOTSEL にしてから。HARNESS_RAM=1 なら RAM だけで動かす (フラッシュの中身は残る)
 python3 tools/harness/harness.py wiretest

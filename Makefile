@@ -15,8 +15,9 @@ PICO       := $(DOCKER_RUN) $(PICO_IMAGE)
 #   lcd    40 ピン RGB LCD (800x480) にテストパターン (top_lcd.sv。HDMI とピンを共用しているので別)
 #   lcd480 40 ピン RGB LCD (480x272、4.3 インチ) にテストパターン (top_lcd.sv の PANEL = 1。ピンは lcd と同じ)
 #   probe  ハーネスの配線テスト (top_harness_probe.sv)
-#   probe2 ハーネス v2 の配線テスト (top_harness_probe_v2.sv。HARNESS=v2 で pincheck)
-#   vdp2 / gpu3d2  vdp / gpu3d のハーネス v2 のピン版 (top_v2.sv)。HARNESS=v2 なら bitstream / prog / prog-3d / flash はこちらを使う
+#   probe2 ハーネス v2 の配線テスト (top_harness_probe_v2.sv)
+#   vdp2 / gpu3d2  vdp / gpu3d のハーネス v2 のピン版 (top_v2.sv)。既定 (HARNESS=v2) の bitstream / prog / prog-3d / flash はこちら。
+#                  vdp / gpu3d (top.sv) はハーネス v1 のピンで、HARNESS=v1 のときに使う
 # 再コンフィグ (multiboot): それぞれ相手の番地を「次のビットストリーム」にし (gowin_pack --multiboot_address)、設計が RECONFIG_N (ピン 9) を
 # Low にして切り替える (vdp_regs の RECONFIG、harness.py reconfig)。gowin_pack の --reconfign_as_gpio は付けない:
 # 付けるとピンが GPIO になって、Low にしても再コンフィグしない (実機で確かめた)。付けなくても設計の出力はピンを駆動でき、再コンフィグの入力として効く
@@ -75,9 +76,9 @@ FREEZE   ?= 0                   # 1: アニメーションを止めて描く (�
 BUILD    := build
 
 # --- ハーネス (docs/HARNESS.md) ---
-# HARNESS=v2 でハーネス v2 (Pico 2、docs/HARNESS2.md): 配線表、ファームウェアのボード、pincheck が v2 になる。
-# v2 をつないでいるときは export HARNESS=v2 にしておく (harness.py が呼ぶ make にも効く)
-HARNESS          ?= v1
+# ハーネスの版。既定は v2 (Pico 2、docs/HARNESS2.md)。配線表、ファームウェアのボード、pincheck、bitstream / prog / flash の設計が変わる。
+# v1 (RP2040-Zero、docs/HARNESS.md) をつなぐときは export HARNESS=v1 にする (harness.py が呼ぶ make にも効く)
+HARNESS          ?= v2
 ifeq ($(strip $(HARNESS)),v2)
 HARNESS_PINS     := harness/kicad/v2/pins_v2.json
 HARNESS_BOARD    ?= pico2
@@ -119,7 +120,7 @@ help:
 	@echo "                 scenarios/gpu3d/ のシナリオは 3D GPU の構成で走る"
 	@echo "make render      Verilator で映像出力を PNG 化 (build/render/, FRAMES=$(FRAMES))。make render-lcd で 800x480、render-lcd480 で 480x272"
 	@echo "                 FREEZE=1 でアニメーションを止めた参照画像と CRC (frames.json) を build/render_frozen/ に"
-	@echo "make bitstream   VDP と 3D GPU のビットストリーム (build/vdp/top.fs、build/gpu3d/top.fs)。1 つだけなら make bitstream-<vdp|gpu3d|lcd|lcd480|probe|probe2>"
+	@echo "make bitstream   VDP と 3D GPU のビットストリーム (HARNESS=$(HARNESS) のピン: $(VDP_FS)、$(G3D_FS))。1 つだけなら make bitstream-<vdp|gpu3d|lcd|lcd480|probe|probe2>"
 	@echo "make prog        VDP を SRAM に書き込み (make prog-3d / prog-lcd / prog-lcd480 / prog-probe / prog-probe2。ホストの openFPGALoader が必要。pincheck 込み)"
 	@echo "make flash       VDP (0x000000) と 3D GPU (0x100000) をフラッシュに。電源を入れると VDP、harness.py reconfig で入れ替わる"
 	@echo "make demo        デモをハーネス経由で流す (既定は Ctrl-C まで、FRAMES=N で N フレーム。ホストの python3)"
@@ -316,10 +317,11 @@ harness-fw:
 	@ls $(HARNESS_UF2)
 
 # BOOTSEL で出てくるドライブに UF2 をコピーする (コンテナから USB は見えないのでホストで実行)
+# macOS は cp -X (拡張属性を書かない。付けないと UF2 のドライブへのコピーが止まることがある)。
 # HARNESS_RAM=1 なら RAM だけで動かす (フラッシュの中身は残り、抜き差しで戻る。別のファームウェアが入っている RP2 を一時的に使うとき)
 harness-deploy: harness-fw
 	@if [ -z "$(RP2_MOUNT)" ]; then echo "RP2 の BOOTSEL ドライブが見つかりません (BOOT を押しながら USB をつなぐ)"; exit 1; fi
-	cp $(HARNESS_UF2) $(RP2_MOUNT)/
+	$(if $(filter Darwin,$(shell uname)),cp -X,cp) $(HARNESS_UF2) $(RP2_MOUNT)/
 	@echo "-> $(RP2_MOUNT)"
 
 # ハーネスの基板の検査 (scripts/kicad_check.py、.claude/skills/kicad-check)。違反があれば止まる
