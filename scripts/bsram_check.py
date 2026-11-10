@@ -21,7 +21,9 @@ def main(path):
     with open(path) as f:
         top = json.load(f)
     mods = top["modules"]
-    m = mods.get("top") or next(iter(mods.values()))
+    # トップ (yosys が attributes.top を付ける)。名前で探すと top_v2 などで外れ、プリミティブの定義を見て何も検査しなくなる
+    tops = [m for m in mods.values() if m.get("attributes", {}).get("top")]
+    m = tops[0] if len(tops) == 1 else mods["top"]
     driver = {}                                        # ネットのビット → (セルの種類, セルの名前, ポート)
     for name, c in m["cells"].items():
         dirs = c.get("port_directions", {})

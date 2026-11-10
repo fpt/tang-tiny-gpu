@@ -29,8 +29,9 @@ The documents under `docs/` are written in Japanese.
   (a 60Hz frame is 1,050K), so all of them fit in 60fps. On hardware the link (below) is the bottleneck, giving 30–50fps
 - **Bitstream switching**: works with flash multiboot (VDP at 0x000000, 3D GPU at 0x100000) and RECONFIG_N (pin 9). The harness switches to the bitstream it needs
   on its own
-- **Host link**: currently the development harness (USB → RP2040-Zero → SPI 8MHz, about 764KB/s). The production link will be the RP2350's HSTX (about 37MB/s expected);
-  the board for harness v2 (Pico 2) is being made ([docs/HARNESS2.md](docs/HARNESS2.md)). The production RP2350 firmware (`firmware/`) is still a skeleton
+- **Host link**: currently the development harness over SPI 8MHz (about 764KB/s). Harness v1 uses an RP2040-Zero; harness v2 (Pico 2, [docs/HARNESS2.md](docs/HARNESS2.md))
+  is built and runs everything over SPI (`export HARNESS=v2`). The production link will be the RP2350's HSTX (about 37MB/s expected), which harness v2 already has the wires for;
+  the HSTX receiver isn't written yet. The production RP2350 firmware (`firmware/`) is still a skeleton
 - The stage names (M / E / K / G) are listed in the stage table of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Documents
