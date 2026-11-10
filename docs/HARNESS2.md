@@ -75,12 +75,15 @@ Pico ピン配置では HSTX の 8 本が 16〜25 に連続して並ぶので、
 ### 2.2 v2 で動かすときに変えるもの
 
 - `HARNESS=v2` (Makefile) で配線表が `pins_v2.json`、ファームウェアが `pico2` / `rp2350-arm-s` (`harness/firmware/build_v2/`)、`pincheck` が v2 になる。
-  v2 をつないでいるあいだは `export HARNESS=v2` にしておく (`harness.py` が呼ぶ `make` にも効く)。v1 の配線のままの VDP / 3D GPU は `pincheck` で止まる
-  (71、19、20 を FPGA が駆動するため)
+  v2 をつないでいるあいだは `export HARNESS=v2` にしておく (`harness.py` が呼ぶ `make` にも効く)。`make bitstream` / `prog` / `prog-3d` / `flash` は
+  v2 のピンの `vdp2` / `gpu3d2` (`top_v2.sv` + `constraints/tangnano20k_v2.cst`) を使う。v1 のピンの `vdp` / `gpu3d` は `pincheck` で止まる
+  (71、19、20 を FPGA が駆動するため)。**フラッシュも v2 の組にしておく** (`make flash`)。v1 の組が残っていると、RECONFIG で v1 の 3D GPU が立ち上がり、
+  Pico が SPI に使う 19 / 20 を LED として駆動する
 - ファームウェア (済み): `pins.h` を `pins_v2.json` から作り、`PIN_HEARTBEAT` があるかどうかで v1 / v2 を分ける。v2 は `fpga_ready()` を VSYNC のエッジで、
   SPI1 (SCK の GPIO から決める)、`wiretest` は v2 用 (2.4)。残り: HSTX の送り出し (`stream` を HSTX に)
-- FPGA: 制約ファイル (上の `.cst`)、HEARTBEAT の出力をなくし、VSYNC を 52 に。配線テストは `top_harness_probe_v2` (済み)
-- `harness.py`: selftest の HEARTBEAT 30Hz の項目を VSYNC 60Hz に、RESET の項目は VSYNC の立ち上がりで数える
+- FPGA (済み): `top_v2.sv` は `top.sv` を包んでピンだけ v2 にする。HEARTBEAT、ERROR、LED4 / LED5 はピンに出さない (LED0〜3 は残す)。
+  配線テストは `top_harness_probe_v2`。残り: HSTX の受信 (71〜74、80)
+- `harness.py` (済み): selftest はブリッジの `status` に HEARTBEAT がなければ VSYNC で見る (ready、RESET で止まること。300ms で約 18 回)
 
 ### 2.4 配線テスト (`wiretest`、実機で確かめた)
 
@@ -95,6 +98,8 @@ python3 tools/harness/harness.py wiretest
 - 第 2 段階: Pico → FPGA の 9 本を 1 本ずつ立て、FPGA が返す番号 (1〜9。2 本以上なら 15) を VSYNC の Low / High の半周期ずつ {IRQ, CIPO} の 2 ビットで読む。
   何も立てていないときは番号が読めない (-1) こと
 - 2026-11-10 に v2 の基板で 12 本とも通った (20 回続けて)
+- 同じ日に v2 のピンの VDP / 3D GPU (`vdp2` / `gpu3d2`) で `selftest` と、2D (M5、M7、E1) と 3D (G1〜G5) のシナリオの FRAME_CRC が、
+  配置の種 2 つ (既定と `SEED=2`) で 2 回ずつ全部一致した。SPI は 8MHz まで、RECONFIG での入れ替えも v2 のフラッシュの組で動く
 
 確かめたときに分かったこと:
 
