@@ -16,10 +16,11 @@ PICO       := $(DOCKER_RUN) $(PICO_IMAGE)
 #   lcd480 40 ピン RGB LCD (480x272、4.3 インチ) にテストパターン (top_lcd.sv の PANEL = 1。ピンは lcd と同じ)
 #   probe  ハーネスの配線テスト (top_harness_probe.sv)
 #   probe2 ハーネス v2 の配線テスト (top_harness_probe_v2.sv。HARNESS=v2 で pincheck)
+#   vdp2 / gpu3d2  vdp / gpu3d のハーネス v2 のピン版 (top_v2.sv)。HARNESS=v2 なら bitstream / prog / prog-3d / flash はこちらを使う
 # 再コンフィグ (multiboot): それぞれ相手の番地を「次のビットストリーム」にし (gowin_pack --multiboot_address)、設計が RECONFIG_N (ピン 9) を
 # Low にして切り替える (vdp_regs の RECONFIG、harness.py reconfig)。gowin_pack の --reconfign_as_gpio は付けない:
 # 付けるとピンが GPIO になって、Low にしても再コンフィグしない (実機で確かめた)。付けなくても設計の出力はピンを駆動でき、再コンフィグの入力として効く
-DESIGNS := vdp gpu3d lcd lcd480 probe probe2
+DESIGNS := vdp gpu3d vdp2 gpu3d2 lcd lcd480 probe probe2
 vdp_TOP     := top
 vdp_CST     := constraints/tangnano20k.cst
 vdp_PARAMS  :=
@@ -31,6 +32,15 @@ gpu3d_PARAMS := -G GPU3D=1 $(if $(filter 1,$(MUL_PROBE)),-G MUL_PROBE=1)
 gpu3d_PACK   := --multiboot_address 0x000000
 gpu3d_FLASH  := 0x100000
 gpu3d_STRICT := 1                # 真のデュアルポートの BSRAM の番地が FF から直接でなければ止める (scripts/bsram_check.py)
+vdp2_TOP     := top_v2
+vdp2_CST     := constraints/tangnano20k_v2.cst
+vdp2_PARAMS  := $(vdp_PARAMS)
+vdp2_PACK    := $(vdp_PACK)
+gpu3d2_TOP    := top_v2
+gpu3d2_CST    := constraints/tangnano20k_v2.cst
+gpu3d2_PARAMS := $(gpu3d_PARAMS)
+gpu3d2_PACK   := $(gpu3d_PACK)
+gpu3d2_STRICT := 1
 lcd_TOP     := top_lcd
 lcd_CST     := constraints/tangnano20k_lcd.cst
 lcd480_TOP    := top_lcd
@@ -73,12 +83,19 @@ HARNESS_PINS     := harness/kicad/v2/pins_v2.json
 HARNESS_BOARD    ?= pico2
 HARNESS_PLATFORM ?= rp2350-arm-s
 HARNESS_FW_BUILD := harness/firmware/build_v2
+HV               := 2
 else
 HARNESS_PINS     := harness/pins.json
 HARNESS_BOARD    ?= waveshare_rp2040_zero
 HARNESS_PLATFORM ?= rp2040
 HARNESS_FW_BUILD := harness/firmware/build
+HV               :=
 endif
+# bitstream / prog / prog-3d / flash が使う設計 (v2 なら vdp2 / gpu3d2)
+VDP_D   := vdp$(HV)
+G3D_D   := gpu3d$(HV)
+VDP_FS  := build/$(VDP_D)/$($(VDP_D)_TOP).fs
+G3D_FS  := build/$(G3D_D)/$($(G3D_D)_TOP).fs
 HARNESS_UF2      := $(HARNESS_FW_BUILD)/harness_bridge.uf2
 KICAD_PCB        ?= harness/kicad/v2/rp-tang-harness-v2.kicad_pcb   # make kicad-check (docs/HARNESS2.md)
 KICAD_PINS       ?= harness/kicad/v2/pins_v2.json
@@ -212,13 +229,19 @@ scenario:
 	$(FPGA) python3 tools/harness/gpu_model.py compare $(SCENARIO) $(SCN_DIR)
 
 # ---------------------------------------------------------------- 実装
-bitstream: build/vdp/top.fs build/gpu3d/top.fs
-bitstream-vdp:   build/vdp/top.fs
-bitstream-gpu3d: build/gpu3d/top.fs
+bitstream: $(VDP_FS) $(G3D_FS)
+bitstream-vdp:   $(VDP_FS)
+bitstream-gpu3d: $(G3D_FS)
+bitstream-vdp2:   build/vdp2/top_v2.fs
+bitstream-gpu3d2: build/gpu3d2/top_v2.fs
 bitstream-lcd:   build/lcd/top_lcd.fs
 bitstream-lcd480: build/lcd480/top_lcd.fs
 bitstream-probe: build/probe/top_harness_probe.fs
 bitstream-probe2: build/probe2/top_harness_probe_v2.fs
+
+# 配置の種 (nextpnr --seed)。実機の完了は 2 つ以上の種で 2 回ずつ (docs/ARCHITECTURE.md)。種だけ変えても作り直さないので、
+# build/<設計>/*_pnr.json を消してから make bitstream SEED=2 などとする
+SEED ?=
 
 # 設計ごとの規則 (合成 → 配置配線 → ビットストリーム → pincheck)。$(1) は設計の名前
 # SystemVerilog は yosys-slang プラグイン (read_slang) で読む。
@@ -235,7 +258,7 @@ build/$(1)/$$($(1)_TOP).json: $$(SYN_SRC) $$(GOWIN_BB)
 build/$(1)/$$($(1)_TOP)_pnr.json: build/$(1)/$$($(1)_TOP).json $$($(1)_CST)
 	$$(FPGA) nextpnr-himbaechel -q -l build/$(1)/$$($(1)_TOP)_nextpnr.log \
 		--json $$< --write $$@ --device $$(DEVICE) \
-		--vopt family=$$(FAMILY) --vopt cst=$$($(1)_CST) --vopt sspi_as_gpio
+		--vopt family=$$(FAMILY) --vopt cst=$$($(1)_CST) --vopt sspi_as_gpio $$(if $$(strip $$(SEED)),--seed $$(SEED))
 
 build/$(1)/$$($(1)_TOP).fs: build/$(1)/$$($(1)_TOP)_pnr.json
 	$$(FPGA) gowin_pack -d $$(FAMILY) --sspi_as_gpio $$($(1)_PACK) -o $$@ $$<
@@ -250,10 +273,10 @@ endef
 $(foreach d,$(DESIGNS),$(eval $(call design_rules,$(d))))
 
 # Docker Desktop (macOS) のコンテナからは USB が見えないので書き込みだけはホストで行う
-prog: pincheck-vdp
-	openFPGALoader -b $(BOARD) build/vdp/top.fs
-prog-3d prog-gpu3d: pincheck-gpu3d
-	openFPGALoader -b $(BOARD) build/gpu3d/top.fs
+prog: pincheck-$(VDP_D)
+	openFPGALoader -b $(BOARD) $(VDP_FS)
+prog-3d prog-gpu3d: pincheck-$(G3D_D)
+	openFPGALoader -b $(BOARD) $(G3D_FS)
 prog-lcd: pincheck-lcd
 	openFPGALoader -b $(BOARD) build/lcd/top_lcd.fs
 prog-lcd480: pincheck-lcd480
@@ -264,9 +287,9 @@ prog-probe2: pincheck-probe2
 	openFPGALoader -b $(BOARD) build/probe2/top_harness_probe_v2.fs
 
 # フラッシュ: VDP を 0x000000、3D GPU を 0x100000 に (電源を入れると VDP。RECONFIG で入れ替わる)
-flash: pincheck-vdp pincheck-gpu3d
-	openFPGALoader -b $(BOARD) -f --offset $(vdp_FLASH) build/vdp/top.fs
-	openFPGALoader -b $(BOARD) -f --offset $(gpu3d_FLASH) build/gpu3d/top.fs
+flash: pincheck-$(VDP_D) pincheck-$(G3D_D)
+	openFPGALoader -b $(BOARD) -f --offset $(vdp_FLASH) $(VDP_FS)
+	openFPGALoader -b $(BOARD) -f --offset $(gpu3d_FLASH) $(G3D_FS)
 
 # デモ: ハーネス (USB) を使うのでホストで動かす。SCENE なしは M9 のデモ (VDP)、SCENE=logo/tunnel/room/city/all は G5 の 3D の場面 (3D GPU)。
 # 動いているビットストリームが違えば harness.py が RECONFIG で切り替える
