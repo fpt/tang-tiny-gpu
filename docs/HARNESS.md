@@ -1,5 +1,8 @@
 # AI 開発ハーネス — Raspberry Pi Pico 2 ↔ Tang Nano 20K
 
+> **このドキュメントはハーネス v1 (RP2040-Zero、ジャンパ線) の設計と、ハーネス共通の `harness.py` の使い方。** 今の既定はハーネス v2 (Pico 2 の基板、
+> [HARNESS2.md](HARNESS2.md))。v1 で動かすときは `export HARNESS=v1` (配線表 `harness/pins.json`、RP2040 のブリッジ、v1 のピンのビットストリーム)
+
 Tang Nano 20K 上の VDP を、Linux ホストと Raspberry Pi Pico 2 から書き込み・操作・観測できるようにするためのハーネスの設計です。
 [ARCHITECTURE.md](ARCHITECTURE.md) の「レジスタバスのマスタは差し替え可能」という方針に沿って、
 Pico 2 を **レジスタバスを叩くマスタ + 観測係** として扱います。Pico 2 は最終的な VDP ホスト (RP2350) そのものなので、
@@ -400,8 +403,8 @@ RP2 には [`harness/firmware`](../harness/firmware/src/main.c) のブリッジ�
 ブリッジは GPU のレジスタやコマンドの意味を知らず、SPI のバイト列を素通しするだけなので、GPU を作り変えても書き換える必要がありません。
 
 ```bash
-make harness-fw                                  # ブリッジ (既定は RP2040-Zero。HARNESS_BOARD / HARNESS_PLATFORM で変更)
-# 初回だけ: BOOT を押しながら USB をつなぎ、harness/firmware/build/harness_bridge.uf2 を RPI-RP2 ドライブへコピー
+make harness-fw                                  # ブリッジ (既定はハーネス v2 の Pico 2。HARNESS=v1 で RP2040-Zero。HARNESS_BOARD / HARNESS_PLATFORM でも変えられる)
+# 初回だけ: BOOT を押しながら USB をつなぎ、make harness-deploy (BOOTSEL のドライブに UF2 をコピー)
 python3 tools/harness/harness.py bootsel         # 2 回目以降は BOOT ボタンなしで BOOTSEL に入れる
 python3 tools/harness/harness.py status          # ピンの値、HEARTBEAT / VSYNC / IRQ の周期、ready
 python3 tools/harness/harness.py spi a55a0102    # SPI の 1 トランザクション

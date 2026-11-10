@@ -27,8 +27,9 @@ FPGA には **2 つのビットストリーム** があり、フラッシュに�
   1 フレーム 290K〜960K クロック (60Hz の 1 フレームは 1,050K) で、どれも 60fps に間に合う。今は実機のリンク (下) が律速で 30〜50fps
 - **ビットストリームの切り替え**: フラッシュの multiboot (VDP 0x000000、3D GPU 0x100000) と RECONFIG_N (ピン 9) で動いている。ハーネスは、要るビットストリームが
   動いていなければ自分で切り替える
-- **ホストとのリンク**: 今は開発用のハーネスの SPI 8MHz (約 764KB/s)。ハーネス v1 は RP2040-Zero、v2 (Pico 2、[docs/HARNESS2.md](docs/HARNESS2.md)) は
-  基板ができて SPI で全部動く (`export HARNESS=v2`)。本番は RP2350 の HSTX (37MB/s の見込み) で、v2 には線があるが、FPGA の受信はまだ。
+- **ホストとのリンク**: 今は開発用のハーネスの SPI 8MHz (約 764KB/s)。既定はハーネス v2 (Pico 2、[docs/HARNESS2.md](docs/HARNESS2.md))。
+  前のハーネス v1 (RP2040-Zero、[docs/HARNESS.md](docs/HARNESS.md)) も `export HARNESS=v1` で使える。本番は RP2350 の HSTX (37MB/s の見込み) で、
+  v2 には線があるが、FPGA の受信はまだ。
   RP2350 の本番のファームウェア (`firmware/`) はまだ雛形
 - 段階の名前 (M / E / K / G) の意味は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) の「段階の記録」
 
@@ -84,7 +85,9 @@ make help
 
 ### 実機で動かす (ハーネス)
 
-ハーネス (RP2040-Zero のブリッジ、`make harness-fw` / `make harness-deploy`) をつなぎ、ホストの `tools/harness/harness.py` から操作します。
+ハーネス (ハーネス v2: Pico 2 のブリッジ、`make harness-fw` / `make harness-deploy`) をつなぎ、ホストの `tools/harness/harness.py` から操作します。
+ハーネス v1 (RP2040-Zero) なら先に `export HARNESS=v1` にします (配線表、ブリッジのファームウェア、ビットストリームのピンがそれに合わせて変わる)。
+FPGA のフラッシュには使うハーネスの組を置いておきます (`make flash`)。違うと 3D GPU に切り替えたときに、もう一方のハーネスのピンのビットストリームが立ち上がります。
 
 | コマンド | 内容 |
 | --- | --- |
