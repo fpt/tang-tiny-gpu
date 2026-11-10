@@ -9,6 +9,7 @@ HDMI からは DDC_CLK (52) だけを借りる (EDID は読まない)。ジャ�
   **Pico LiPo 2** (同) にもそのまま載る。RP2350-PiZero は入手できなくなったので使わない
 - 回路図: [`harness/kicad/v2/rp-tang-harness-v2.kicad_sch`](../harness/kicad/v2/rp-tang-harness-v2.kicad_sch) (基板は同じ場所の `rp-tang-harness-v2.kicad_pcb`)
 - 配線表: [`harness/kicad/v2/pins_v2.json`](../harness/kicad/v2/pins_v2.json) (v1 と同じ形式。信号名も v1 に合わせてあるので `gen_pins_h.py` がそのまま使える)
+- 検査: `make kicad-check` で、基板 (`.kicad_pcb`) をこの配線表と比べ、配線のつながり・短絡・間隔と、発注したガーバー (`harness/kicad/v2/gerber/`) を確かめる (`scripts/kicad_check.py`)
 
 ## 1. 配線表 (12 本 + GND)
 

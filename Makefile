@@ -67,6 +67,9 @@ HARNESS_BOARD    ?= waveshare_rp2040_zero
 HARNESS_PLATFORM ?= rp2040
 HARNESS_FW_BUILD := harness/firmware/build
 HARNESS_UF2      := $(HARNESS_FW_BUILD)/harness_bridge.uf2
+KICAD_PCB        ?= harness/kicad/v2/rp-tang-harness-v2.kicad_pcb   # make kicad-check (docs/HARNESS2.md)
+KICAD_PINS       ?= harness/kicad/v2/pins_v2.json
+KICAD_GERBERS    ?= $(wildcard $(dir $(KICAD_PCB))gerber)       # 発注したガーバーのディレクトリ (なければ見ない)
 RP2_MOUNT         = $(firstword $(wildcard /Volumes/RPI-RP2 /Volumes/RP2350 /media/*/RPI-RP2 /media/*/RP2350))
 
 # --- RP2350 ---
@@ -75,7 +78,7 @@ PICO_PLATFORM ?= rp2350-arm-s   # rp2350-riscv にすると Hazard3 コア用
 
 .PHONY: timing-repro help images image-fpga image-pico all lint sim scenario $(addprefix sim-,$(TBS)) render render-lcd render-lcd480 \
 	bitstream $(addprefix bitstream-,$(DESIGNS)) $(addprefix pincheck-,$(DESIGNS)) prog prog-3d prog-gpu3d prog-lcd prog-lcd480 prog-probe flash \
-	demo fw harness-fw harness-deploy shell shell-pico zip clean
+	demo fw harness-fw harness-deploy kicad-check shell shell-pico zip clean
 
 help:
 	@echo "make images      Docker イメージをビルド (image-fpga / image-pico で個別に)"
@@ -94,6 +97,7 @@ help:
 	@echo "                 動いているビットストリームが違えば RECONFIG で切り替える (make flash で両方を書いておく)"
 	@echo "make harness-fw  ハーネスの RP2 ブリッジファームウェア (HARNESS_BOARD=$(HARNESS_BOARD))"
 	@echo "make harness-deploy  BOOTSEL の RP2 に書き込む (ホストで実行)"
+	@echo "make kicad-check ハーネスの基板 (KICAD_PCB) を配線表 (KICAD_PINS) と比べ、配線・短絡・間隔とガーバー (KICAD_GERBERS) を検査"
 	@echo "make fw          RP2350 ファームウェアをビルド (firmware/build/*.uf2)"
 	@echo "make shell       FPGA ツールコンテナのシェル"
 	@echo "make shell-pico  RP2350 ツールコンテナのシェル"
@@ -277,6 +281,10 @@ harness-deploy: harness-fw
 	@if [ -z "$(RP2_MOUNT)" ]; then echo "RP2 の BOOTSEL ドライブが見つかりません (BOOT を押しながら USB をつなぐ)"; exit 1; fi
 	cp $(HARNESS_UF2) $(RP2_MOUNT)/
 	@echo "-> $(RP2_MOUNT)"
+
+# ハーネスの基板の検査 (scripts/kicad_check.py、.claude/skills/kicad-check)。違反があれば止まる
+kicad-check:
+	$(FPGA) python3 scripts/kicad_check.py $(KICAD_PCB) $(if $(strip $(KICAD_PINS)),--pins $(KICAD_PINS)) $(if $(strip $(KICAD_GERBERS)),--gerbers $(KICAD_GERBERS))
 
 # nextpnr の Gowin のタイミング解析の確かめ (docs/ARCHITECTURE.md の 10 章)。配置のあとと配線のあとの Max frequency を並べる
 TIMING_REPRO := tools/repro/nextpnr_gowin_timing
