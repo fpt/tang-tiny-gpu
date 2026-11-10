@@ -52,6 +52,7 @@ import json
 import os
 import random
 import select
+import signal
 import subprocess
 import sys
 import termios
@@ -214,7 +215,24 @@ class Gpu:
             time.sleep(0.002)
 
     def flush(self):
+        """FIFO と実行中のコマンドを捨てる (VDP の GPU_STATUS bit0 への書き込み)。3D GPU にはこれがないので、途中で切れたコマンド
+        (前のホストツールを止めたときなど) で実行中のままなら RESET を入れる (レジスタは電源を入れたときに戻る)。RESET したら True"""
         self.vdp.write(REGS["GPU_STATUS"], [0x01])
+        deadline = time.monotonic() + 0.2
+        while self.status() & GPU_ST_BUSY:
+            if time.monotonic() > deadline:
+                break
+            time.sleep(0.002)
+        else:
+            return False
+        bridge = self.vdp.bridge
+        bridge.command("reset 20")
+        deadline = time.monotonic() + 2.0
+        while not bridge.command("status").get("ready"):      # RESET のあと VSYNC (v1 は HEARTBEAT) が動き出すまで
+            if time.monotonic() > deadline:
+                raise HarnessError("not ready after RESET")
+            time.sleep(0.02)
+        return True
 
 
 class Vdp:
@@ -745,8 +763,11 @@ def demo(bridge, frames, start, scene=None, shot=None):
         f0 = vdp.read1(REGS["FRAME_COUNT"])
         shown, last = 0, f0
         t0 = time.monotonic()
+        # Ctrl-C はフレームの区切りで止める (送っている途中で止めると、3D GPU は切れたコマンドを待ったまま実行中になる)
+        stop = []
+        old_int = signal.signal(signal.SIGINT, lambda *_: stop.append(1))
         try:
-            while frames == 0 or k < start + frames:
+            while (frames == 0 or k < start + frames) and not stop:
                 w = demo_mod.frame_words(k)
                 gpu.send(w)
                 words += len(w)
@@ -754,8 +775,8 @@ def demo(bridge, frames, start, scene=None, shot=None):
                 f = vdp.read1(REGS["FRAME_COUNT"])      # 8bit で回るので、こまめに足す
                 shown += (f - last) & 0xFF
                 last = f
-        except KeyboardInterrupt:
-            pass
+        finally:
+            signal.signal(signal.SIGINT, old_int)
         st = gpu.wait_idle(timeout=20)
         elapsed = time.monotonic() - t0
         f = vdp.read1(REGS["FRAME_COUNT"])
