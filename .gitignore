@@ -2,6 +2,7 @@
 build/
 firmware/build/
 harness/firmware/build/
+harness/firmware/build_v2/
 dist/
 
 # 社内プロキシの CA (make certs.pem が ~/.zscaler/certs.pem からコピーする)
