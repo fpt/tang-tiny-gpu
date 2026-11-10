@@ -1,7 +1,7 @@
 """HDMI キャプチャと参照画像の比較 (docs/ARCHITECTURE.md の段階 M2)。Python 標準ライブラリだけで動く
 
-キャプチャ (V-Z632、MS2109 など) は YUV 4:2:2 のリミテッドレンジを通るので、色が少しずれ、横方向に色がにじむ。
-YUV から RGB に戻す式はキャプチャの石に合わせる (V-Z632 は BT.709。ffmpeg の既定の BT.601 で戻すと純色が 40 近くずれる)。
+キャプチャ (MS2109、V-Z632 など) は YUV 4:2:2 のリミテッドレンジを通るので、色が少しずれ、横方向に色がにじむ。
+YUV から RGB に戻す式はキャプチャの石に合わせる (CAPTURE_MATRIX。V-Z632 は BT.709 で、BT.601 で戻すと純色が 40 近くずれる)。
 そこで、チャンネルごとに「キャプチャ ≒ 倍率 x 参照 + オフセット」を最小二乗で求めて補正してから、
 補正後の差が許容値以内のピクセルの割合を見る。色の境目から横 2 ピクセル・縦 1 ライン以内は必ずにじむので、
 割合の計算から外し、別に数える。正しさの判定は FRAME_CRC (完全一致) で行い、
@@ -13,8 +13,11 @@ import struct
 import subprocess
 import zlib
 
-DEFAULT_DEVICE = "V-Z632"   # macOS の avfoundation での名前 (MacroSilicon、USB 3)。Linux では /dev/video0 など
-DEFAULT_MATRIX = "bt709"    # YUV → RGB の式 (HARNESS_CAPTURE_MATRIX で変える。前の MS2109 の "USB3. 0 capture" は bt601)
+# 既定は MS2109 の "USB3. 0 capture" (macOS の avfoundation での名前。Linux では /dev/video0 など)。ハーネス v1 と v2 を同じキャプチャで比べるため。
+# V-Z632 (HARNESS_CAPTURE=V-Z632) は 60fps で取れるが、飽和した色 (赤・青のグラデーション、純色の面) が g2_tbdr / g4_semi で 85〜95% まで落ちる
+# (CRC は一致。MS2109 では 94〜99%)。docs/HARNESS.md
+DEFAULT_DEVICE = "USB3. 0 capture"
+CAPTURE_MATRIX = {"V-Z632": "bt709"}   # YUV → RGB の式。ここにないキャプチャは bt601。HARNESS_CAPTURE_MATRIX で上書きできる
 
 
 def read_png(path):
@@ -77,7 +80,7 @@ def capture(w, h, device=None, skip=5):
     デバイスは番号ではなく名前で選ぶ (番号は変わることがあり、別のカメラを開いてしまうことがある)"""
     device = device or os.environ.get("HARNESS_CAPTURE") or (
         DEFAULT_DEVICE if platform.system() == "Darwin" else "/dev/video0")
-    matrix = os.environ.get("HARNESS_CAPTURE_MATRIX") or DEFAULT_MATRIX
+    matrix = os.environ.get("HARNESS_CAPTURE_MATRIX") or CAPTURE_MATRIX.get(device, "bt601")
     if platform.system() == "Darwin":
         src = ["-f", "avfoundation", "-pixel_format", "uyvy422", "-framerate", "30", "-video_size", f"{w}x{h}",
                "-i", f"{device}:none"]
@@ -93,7 +96,7 @@ def capture(w, h, device=None, skip=5):
 
 def capture_like(w, h, expect, timeout=5.0):
     """capture と同じだが、参照 (expect) に絵があるのにキャプチャが一様 (信号なし) のときは、timeout 秒まで取り直す。
-    再コンフィグのあと HDMI が一度止まり、キャプチャ (V-Z632) が映像をつかみ直すまで 1〜2 秒かかる (その間は一様な暗い画面が来る)"""
+    再コンフィグのあと HDMI が一度止まり、キャプチャ (とくに V-Z632) が映像をつかみ直すまで 1〜2 秒かかる (その間は一様な暗い画面が来る)"""
     import time
 
     def flat(img):
