@@ -19,3 +19,7 @@ target_link_libraries(harness_bridge pico_stdlib pico_bootrom hardware_gpio hard
 pico_enable_stdio_usb(harness_bridge 1)
 pico_enable_stdio_uart(harness_bridge 0)   # GP0/GP1 は OLED 用に空けておく
 pico_add_extra_outputs(harness_bridge)     # .uf2 / .bin / .hex を生成
+# HARNESS_RAM=1: フラッシュに書かず RAM だけで動かす (BOOTSEL から UF2 を入れると SRAM で走る。抜き差しで元のファームウェアに戻る)
+if (HARNESS_RAM)
+    pico_set_binary_type(harness_bridge no_flash)
+endif()
