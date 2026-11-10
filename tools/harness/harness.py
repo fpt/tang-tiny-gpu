@@ -349,10 +349,13 @@ def selftest(bridge, iterations):
         item("bridge ping", r.get("ok"), fw=r.get("fw"), version=r.get("version"), board=r.get("board"))
 
         r = bridge.command("status")
-        item("fpga ready (HEARTBEAT toggling)", r.get("ready"), heartbeat=r.get("heartbeat"))
+        # ハーネス v2 (docs/HARNESS2.md) には HEARTBEAT がなく、ready は VSYNC で見る
+        beat = "heartbeat" if "heartbeat" in r else "vsync"
+        item(f"fpga ready ({beat.upper()} toggling)", r.get("ready"), **{beat: r.get(beat)})
 
-        hz = edge_rate(bridge, "heartbeat", 1.0)
-        item("HEARTBEAT 30Hz +-5%", abs(hz - 30.0) <= 1.5, hz=round(hz, 2))
+        if beat == "heartbeat":
+            hz = edge_rate(bridge, "heartbeat", 1.0)
+            item("HEARTBEAT 30Hz +-5%", abs(hz - 30.0) <= 1.5, hz=round(hz, 2))
 
         hz = edge_rate(bridge, "vsync", 1.0)
         item("VSYNC 60Hz +-1%", abs(hz - 60.0) <= 0.6, hz=round(hz, 2))
@@ -388,16 +391,17 @@ def selftest(bridge, iterations):
         vdp.write(REGS["CONTROL"], [0])
         item("IRQ (VBLANK) with CONTROL.IRQ_EN", r.get("ok"), waited_us=r.get("waited_us"))
 
-        # 動いていれば 300ms で HEARTBEAT の立ち上がりは約 9 回。リセット中は止まり、解除直後に 1 回立ち上がる
+        # 動いていれば 300ms で HEARTBEAT の立ち上がりは約 9 回 (v2 は VSYNC で約 18 回)。リセット中は止まり、解除直後に 1 回立ち上がる
+        expect = 7 if beat == "heartbeat" else 15
         vdp.write(REGS["SCRATCH"], [0xA5])
-        r0 = bridge.command("status")["heartbeat"]["rises"]
+        r0 = bridge.command("status")[beat]["rises"]
         bridge.command("reset 300", timeout=3.0)
-        r1 = bridge.command("status")["heartbeat"]["rises"]
+        r1 = bridge.command("status")[beat]["rises"]
         time.sleep(0.3)
-        r2 = bridge.command("status")["heartbeat"]["rises"]
+        r2 = bridge.command("status")[beat]["rises"]
         scratch = vdp.read1(REGS["SCRATCH"])
-        item("RESET stops HEARTBEAT and clears registers", r1 - r0 <= 2 and r2 - r1 >= 7 and scratch == 0,
-             heartbeat_rises_during_300ms_reset=r1 - r0, heartbeat_rises_300ms_after=r2 - r1, scratch=scratch)
+        item(f"RESET stops {beat.upper()} and clears registers", r1 - r0 <= 2 and r2 - r1 >= expect and scratch == 0,
+             **{f"{beat}_rises_during_300ms_reset": r1 - r0, f"{beat}_rises_300ms_after": r2 - r1}, scratch=scratch)
 
         # SDRAM: 今の取り込み位置で、位相を何段ずらしても読めるか (前後の余裕)。毎回記録する
         vdp = Vdp(bridge)
@@ -441,7 +445,8 @@ def selftest(bridge, iterations):
              idle=idle_level, queued=queued, fifo_words=depth, while_queued=busy_level, after_drain=after_level)
 
         pins = bridge.command("status")["pins"]
-        items.append({"name": "LED0-5 (info)", "ok": True, "leds": [pins[f"LED{i}"] for i in range(6)]})
+        if "LED0" in pins:   # v1 だけ
+            items.append({"name": "LED0-5 (info)", "ok": True, "leds": [pins[f"LED{i}"] for i in range(6)]})
         items.append({"name": "UART banner", "ok": True, "skipped": "not implemented yet"})
     except HarnessError:
         pass
@@ -468,7 +473,7 @@ def frametest(bridge, ref_dir, do_capture, out_dir):
 
         if do_capture:
             w, h, ref_rgb = imgcmp.read_png(result["reference"])
-            cap = imgcmp.capture(w, h)
+            cap = imgcmp.capture_like(w, h, ref_rgb)
             stats, diff = imgcmp.compare(ref_rgb, cap, w, h)
             os.makedirs(out_dir, exist_ok=True)
             imgcmp.write_png(os.path.join(out_dir, "capture.png"), w, h, cap)
@@ -586,7 +591,7 @@ def scenario(bridge, path, do_capture, out_dir):
             if do_capture and kind == "check":       # 印のフレームは過ぎてしまっているのでキャプチャしない (CRC だけ)
                 w, h = 2 * fbmodel.SRC_W, 2 * fbmodel.SRC_H
                 expect = fbmodel.expected_output(img)
-                cap = imgcmp.capture(w, h)
+                cap = imgcmp.capture_like(w, h, expect)
                 stats, diff = imgcmp.compare(expect, cap, w, h)
                 os.makedirs(out_dir, exist_ok=True)
                 name = f"{sc['name']}_{i}"
@@ -947,7 +952,7 @@ def fbtest(bridge, png, slot, keep, do_capture, out_dir):
         result["crc"] = {"ok": all(c == expect_crc for c in crcs), "read": crcs}
         if do_capture:
             w, h = 2 * fbmodel.SRC_W, 2 * fbmodel.SRC_H
-            cap = imgcmp.capture(w, h)
+            cap = imgcmp.capture_like(w, h, expect)
             stats, diff = imgcmp.compare(expect, cap, w, h)
             os.makedirs(out_dir, exist_ok=True)
             imgcmp.write_png(os.path.join(out_dir, "fb_expected.png"), w, h, expect)

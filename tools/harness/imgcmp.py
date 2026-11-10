@@ -91,6 +91,22 @@ def capture(w, h, device=None, skip=5):
     return r.stdout
 
 
+def capture_like(w, h, expect, timeout=5.0):
+    """capture と同じだが、参照 (expect) に絵があるのにキャプチャが一様 (信号なし) のときは、timeout 秒まで取り直す。
+    再コンフィグのあと HDMI が一度止まり、キャプチャ (V-Z632) が映像をつかみ直すまで 1〜2 秒かかる (その間は一様な暗い画面が来る)"""
+    import time
+
+    def flat(img):
+        return max(img) - min(img) <= 16
+
+    deadline = time.monotonic() + timeout
+    cap = capture(w, h)
+    while flat(cap) and not flat(expect) and time.monotonic() < deadline:
+        time.sleep(0.2)
+        cap = capture(w, h)
+    return cap
+
+
 def edge_mask(ref, w, h, threshold, radius=2):
     """参照画像で、横 radius ピクセル以内、または縦 1 ライン以内に、どれかのチャンネルが threshold より大きく違う色があるピクセル
     (キャプチャは 4:2:2 で横に、スケーラの都合で縦にも 1 ラインほどにじむ。なだらかなグラデーションは境目に数えない)"""
