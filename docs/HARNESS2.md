@@ -20,8 +20,8 @@ HDMI からは DDC_CLK (52) だけを借りる (EDID は読まない)。ジャ�
 | HSTX_D2 | P → F | GP14 (bit2) | 19 | 73 | なし | 直列 33R (R6) |
 | HSTX_D3 | P → F | GP15 (bit3) | 20 | 74 | なし | 直列 33R (R7) |
 | HSTX_CLK | P → F | GP16 (bit4) | 21 | 80 (GCLKT_0) | SD D2、10k プルアップ | 直列 33R (R8) |
-| SCK | P → F | GP10 (SPI1 SCK) | 14 | 20 | LED5 | |
-| COPI | P → F | GP11 (SPI1 TX) | 15 | 19 | LED4 | |
+| SCK | P → F | GP10 (SPI1 SCK) | 14 | 20 | LED5 | LED で 3.3V につながり、離すと High (2.4) |
+| COPI | P → F | GP11 (SPI1 TX) | 15 | 19 | LED4 | 同上 |
 | CIPO | F → P | GP8 (SPI1 RX) | 11 | 75 | BL616 MISO | v1 で実績 |
 | CS | P → F | GP9 | 12 | 86 | BL616 SPI_DIR | v1 で実績。正論理、4.7k プルダウン (R9) |
 | IRQ (/READY) | F → P | GP20 | 26 | 85 | SD D1、10k プルアップ | v1 と同じ意味 (CONTROL bit4 で READY)。未コンフィグ時 High |
@@ -74,10 +74,40 @@ Pico ピン配置では HSTX の 8 本が 16〜25 に連続して並ぶので、
 
 ### 2.2 v2 で動かすときに変えるもの
 
-- ファームウェア: `pins.h` を `pins_v2.json` から作る (`make harness-fw` の `HARNESS_PINS`)。`fpga_ready()` を VSYNC のエッジで、SPI1 (GPIO 8〜11)、
-  `wiretest` の表から HEARTBEAT / ERROR / LED を外す。HSTX の送り出し (`stream` を HSTX に)
-- FPGA: 制約ファイル (上の `.cst`)、HEARTBEAT の出力をなくし、VSYNC を 52 に。`pincheck` は `pins_v2.json` で見る。`top_harness_probe` の折り返しの線を減らす
+- `HARNESS=v2` (Makefile) で配線表が `pins_v2.json`、ファームウェアが `pico2` / `rp2350-arm-s` (`harness/firmware/build_v2/`)、`pincheck` が v2 になる。
+  v2 をつないでいるあいだは `export HARNESS=v2` にしておく (`harness.py` が呼ぶ `make` にも効く)。v1 の配線のままの VDP / 3D GPU は `pincheck` で止まる
+  (71、19、20 を FPGA が駆動するため)
+- ファームウェア (済み): `pins.h` を `pins_v2.json` から作り、`PIN_HEARTBEAT` があるかどうかで v1 / v2 を分ける。v2 は `fpga_ready()` を VSYNC のエッジで、
+  SPI1 (SCK の GPIO から決める)、`wiretest` は v2 用 (2.4)。残り: HSTX の送り出し (`stream` を HSTX に)
+- FPGA: 制約ファイル (上の `.cst`)、HEARTBEAT の出力をなくし、VSYNC を 52 に。配線テストは `top_harness_probe_v2` (済み)
 - `harness.py`: selftest の HEARTBEAT 30Hz の項目を VSYNC 60Hz に、RESET の項目は VSYNC の立ち上がりで数える
+
+### 2.4 配線テスト (`wiretest`、実機で確かめた)
+
+```bash
+export HARNESS=v2
+make prog-probe2                       # FPGA に top_harness_probe_v2 (pincheck 込み)
+make harness-deploy                    # Pico 2 を BOOTSEL にしてから。HARNESS_RAM=1 なら RAM だけで動かす (フラッシュの中身は残る)
+python3 tools/harness/harness.py wiretest
+```
+
+- 第 1 段階: FPGA → Pico の 3 本 (CIPO 13.2kHz、IRQ 6.6kHz、VSYNC 3.3kHz) の周波数と、Pico → FPGA の 9 本が離した状態のまま動かないこと
+- 第 2 段階: Pico → FPGA の 9 本を 1 本ずつ立て、FPGA が返す番号 (1〜9。2 本以上なら 15) を VSYNC の Low / High の半周期ずつ {IRQ, CIPO} の 2 ビットで読む。
+  何も立てていないときは番号が読めない (-1) こと
+- 2026-11-10 に v2 の基板で 12 本とも通った (20 回続けて)
+
+確かめたときに分かったこと:
+
+- **SCK (20) と COPI (19) は離すと High**。LED5 / LED4 が 3.3V につながっていて、Pico の内蔵プルダウンでは Low にならない (中間の電圧になって FPGA から 0 / 1 が揺れる)。
+  `pins_v2.json` で `"idle": "high"` にし、ファームウェアは離すときにプルアップにする。HSTX_CLK (80) も SD の 10k で同じ。SPI のモード 0 では SCK は Low で待つので、
+  本番で SPI を使うあいだは SCK を Low に駆動しておくか、CS が立っていないあいだの SCK を FPGA が見ないこと (今の `spi_slave` は CS で止まる)
+- **RP2350-E9 は HSTX の線で起きる**。High を出したあと入力 + 内蔵プルダウンに戻すと約 2V に留まり、FPGA から High に見える (外付けのプルダウンがあるのは CS と RESET だけ)。
+  離す前にいったん Low を出す。本番の HSTX は出力のままなので関係しない
+- **80 (GCLKT_0) はデータの入力として読めない** (apicula / nextpnr: 専用の配線で失敗したあと一般の配線でつながるが、値が常に High に見えた)。
+  FPGA から 80 を駆動すると Pico には届くので、線は正しい。クロックとして受ければ届く (`top_harness_probe_v2` は立ち上がりで反転する FF で受け、
+  Pico は読むあいだ HSTX_CLK をトグルする)。本番の HSTX の受信も 80 はクロックとして使う
+- VSYNC (52) は DDC_CLK と共有で HDMI のケーブルにもつながり、エッジがなまって揺れることがある。VSYNC で半周期を分けて読むときは、変わってから 10us を捨て、
+  9 割以上の多数決にする (`read_code`)。VSYNC の立ち上がりで数えるもの (ready の判定など) は今のところ周波数どおり (3.3kHz) に数えている
 
 ### 2.3 再コンフィグ (VDP と 3D GPU の切り替え) に線は要らない
 
@@ -91,7 +121,7 @@ RECONFIG_N (ピン 9) は Tang Nano 20K のヘッダに出ていない (基板�
 
 ## 3. FPGA 側
 
-- 80 (GCLKT_0) を `IBUF` → グローバルクロック、71〜74 を `IDDR` で受けて 8bit/クロック。非同期 FIFO (BSRAM) で `clk_sys` へ
+- 80 (GCLKT_0) を `IBUF` → グローバルクロック (データの入力としては読めない。2.4)、71〜74 を `IDDR` で受けて 8bit/クロック。非同期 FIFO (BSRAM) で `clk_sys` へ
 - パケット: マジック 32bit + 長さ + ペイロード + CRC16。ニブル単位でマジックを探して同期、CRC 不一致は捨ててカウンタを上げる
 - SPI (86/20/19/75) と IRQ (85)、VSYNC (52)、RESET (79) は v1 と同じモジュールのままピンだけ変える。HEARTBEAT の出力はなくす。SPI と HSTX は同じパケット解析器 → コマンド FIFO に入れる
 - `.cst`:

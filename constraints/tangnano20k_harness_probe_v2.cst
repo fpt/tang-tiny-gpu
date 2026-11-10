@@ -1,0 +1,33 @@
+// Tang Nano 20K (GW2AR-LV18QN88C8/I7) ハーネス v2 の配線テスト (top_harness_probe_v2)
+// ピンは harness/kicad/v2/pins_v2.json / docs/HARNESS2.md と同じ。RP2 が駆動する線は FPGA 側でもプルダウンする
+// (SCK の 20 と COPI の 19 は LED が 3.3V に、HSTX_CLK の 80 は SD の D2 の 10k がプルアップしているので、プルなし。80 はクロックとして受ける)
+IO_LOC  "clk" 4;
+IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+
+// RP2 -> FPGA (FPGA は入力のみ)
+IO_LOC  "spi_sck"   20;
+IO_PORT "spi_sck"   IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC  "spi_copi"  19;
+IO_PORT "spi_copi"  IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC  "spi_cs"    86;
+IO_PORT "spi_cs"    IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+IO_LOC  "rst_in"    79;
+IO_PORT "rst_in"    IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+IO_LOC  "hstx_d[0]" 71;
+IO_PORT "hstx_d[0]" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+IO_LOC  "hstx_d[1]" 72;
+IO_PORT "hstx_d[1]" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+IO_LOC  "hstx_d[2]" 73;
+IO_PORT "hstx_d[2]" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+IO_LOC  "hstx_d[3]" 74;
+IO_PORT "hstx_d[3]" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+IO_LOC  "hstx_clk"  80;
+IO_PORT "hstx_clk"  IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+
+// FPGA -> RP2
+IO_LOC  "spi_cipo"  75;
+IO_PORT "spi_cipo"  IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC  "vdp_irq"   85;
+IO_PORT "vdp_irq"   IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC  "vsync_out" 52;
+IO_PORT "vsync_out" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;

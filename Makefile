@@ -15,10 +15,11 @@ PICO       := $(DOCKER_RUN) $(PICO_IMAGE)
 #   lcd    40 ピン RGB LCD (800x480) にテストパターン (top_lcd.sv。HDMI とピンを共用しているので別)
 #   lcd480 40 ピン RGB LCD (480x272、4.3 インチ) にテストパターン (top_lcd.sv の PANEL = 1。ピンは lcd と同じ)
 #   probe  ハーネスの配線テスト (top_harness_probe.sv)
+#   probe2 ハーネス v2 の配線テスト (top_harness_probe_v2.sv。HARNESS=v2 で pincheck)
 # 再コンフィグ (multiboot): それぞれ相手の番地を「次のビットストリーム」にし (gowin_pack --multiboot_address)、設計が RECONFIG_N (ピン 9) を
 # Low にして切り替える (vdp_regs の RECONFIG、harness.py reconfig)。gowin_pack の --reconfign_as_gpio は付けない:
 # 付けるとピンが GPIO になって、Low にしても再コンフィグしない (実機で確かめた)。付けなくても設計の出力はピンを駆動でき、再コンフィグの入力として効く
-DESIGNS := vdp gpu3d lcd lcd480 probe
+DESIGNS := vdp gpu3d lcd lcd480 probe probe2
 vdp_TOP     := top
 vdp_CST     := constraints/tangnano20k.cst
 vdp_PARAMS  :=
@@ -37,9 +38,11 @@ lcd480_CST    := constraints/tangnano20k_lcd.cst
 lcd480_PARAMS := -G PANEL=1
 probe_TOP   := top_harness_probe
 probe_CST   := constraints/tangnano20k_harness_probe.cst
+probe2_TOP  := top_harness_probe_v2
+probe2_CST  := constraints/tangnano20k_harness_probe_v2.cst
 
 ifneq ($(origin TARGET),undefined)
-$(error TARGET はなくなりました: make bitstream (vdp と gpu3d)、make bitstream-<vdp|gpu3d|lcd|lcd480|probe>、make prog / prog-3d / prog-lcd / prog-lcd480 / prog-probe、make flash)
+$(error TARGET はなくなりました: make bitstream (vdp と gpu3d)、make bitstream-<vdp|gpu3d|lcd|lcd480|probe|probe2>、make prog / prog-3d / prog-lcd / prog-lcd480 / prog-probe / prog-probe2、make flash)
 endif
 
 DEVICE   := GW2AR-LV18QN88C8/I7
@@ -62,10 +65,20 @@ FREEZE   ?= 0                   # 1: アニメーションを止めて描く (�
 BUILD    := build
 
 # --- ハーネス (docs/HARNESS.md) ---
+# HARNESS=v2 でハーネス v2 (Pico 2、docs/HARNESS2.md): 配線表、ファームウェアのボード、pincheck が v2 になる。
+# v2 をつないでいるときは export HARNESS=v2 にしておく (harness.py が呼ぶ make にも効く)
+HARNESS          ?= v1
+ifeq ($(strip $(HARNESS)),v2)
+HARNESS_PINS     := harness/kicad/v2/pins_v2.json
+HARNESS_BOARD    ?= pico2
+HARNESS_PLATFORM ?= rp2350-arm-s
+HARNESS_FW_BUILD := harness/firmware/build_v2
+else
 HARNESS_PINS     := harness/pins.json
 HARNESS_BOARD    ?= waveshare_rp2040_zero
 HARNESS_PLATFORM ?= rp2040
 HARNESS_FW_BUILD := harness/firmware/build
+endif
 HARNESS_UF2      := $(HARNESS_FW_BUILD)/harness_bridge.uf2
 KICAD_PCB        ?= harness/kicad/v2/rp-tang-harness-v2.kicad_pcb   # make kicad-check (docs/HARNESS2.md)
 KICAD_PINS       ?= harness/kicad/v2/pins_v2.json
@@ -77,7 +90,7 @@ PICO_BOARD    ?= pico2
 PICO_PLATFORM ?= rp2350-arm-s   # rp2350-riscv にすると Hazard3 コア用
 
 .PHONY: timing-repro help images image-fpga image-pico all lint sim scenario $(addprefix sim-,$(TBS)) render render-lcd render-lcd480 \
-	bitstream $(addprefix bitstream-,$(DESIGNS)) $(addprefix pincheck-,$(DESIGNS)) prog prog-3d prog-gpu3d prog-lcd prog-lcd480 prog-probe flash \
+	bitstream $(addprefix bitstream-,$(DESIGNS)) $(addprefix pincheck-,$(DESIGNS)) prog prog-3d prog-gpu3d prog-lcd prog-lcd480 prog-probe prog-probe2 flash \
 	demo fw harness-fw harness-deploy kicad-check shell shell-pico zip clean
 
 help:
@@ -89,13 +102,13 @@ help:
 	@echo "                 scenarios/gpu3d/ のシナリオは 3D GPU の構成で走る"
 	@echo "make render      Verilator で映像出力を PNG 化 (build/render/, FRAMES=$(FRAMES))。make render-lcd で 800x480、render-lcd480 で 480x272"
 	@echo "                 FREEZE=1 でアニメーションを止めた参照画像と CRC (frames.json) を build/render_frozen/ に"
-	@echo "make bitstream   VDP と 3D GPU のビットストリーム (build/vdp/top.fs、build/gpu3d/top.fs)。1 つだけなら make bitstream-<vdp|gpu3d|lcd|lcd480|probe>"
-	@echo "make prog        VDP を SRAM に書き込み (make prog-3d / prog-lcd / prog-lcd480 / prog-probe。ホストの openFPGALoader が必要。pincheck 込み)"
+	@echo "make bitstream   VDP と 3D GPU のビットストリーム (build/vdp/top.fs、build/gpu3d/top.fs)。1 つだけなら make bitstream-<vdp|gpu3d|lcd|lcd480|probe|probe2>"
+	@echo "make prog        VDP を SRAM に書き込み (make prog-3d / prog-lcd / prog-lcd480 / prog-probe / prog-probe2。ホストの openFPGALoader が必要。pincheck 込み)"
 	@echo "make flash       VDP (0x000000) と 3D GPU (0x100000) をフラッシュに。電源を入れると VDP、harness.py reconfig で入れ替わる"
 	@echo "make demo        デモをハーネス経由で流す (既定は Ctrl-C まで、FRAMES=N で N フレーム。ホストの python3)"
 	@echo "                 SCENE=logo|tunnel|room|city で 3D の場面、SCENE=all で 4 つを 10 秒ずつくり返す。なければ M9 のデモ (VDP)。"
 	@echo "                 動いているビットストリームが違えば RECONFIG で切り替える (make flash で両方を書いておく)"
-	@echo "make harness-fw  ハーネスの RP2 ブリッジファームウェア (HARNESS_BOARD=$(HARNESS_BOARD))"
+	@echo "make harness-fw  ハーネスの RP2 ブリッジファームウェア (HARNESS=$(HARNESS)、HARNESS_BOARD=$(HARNESS_BOARD))"
 	@echo "make harness-deploy  BOOTSEL の RP2 に書き込む (ホストで実行)"
 	@echo "make kicad-check ハーネスの基板 (KICAD_PCB) を配線表 (KICAD_PINS) と比べ、配線・短絡・間隔とガーバー (KICAD_GERBERS) を検査"
 	@echo "make fw          RP2350 ファームウェアをビルド (firmware/build/*.uf2)"
@@ -205,6 +218,7 @@ bitstream-gpu3d: build/gpu3d/top.fs
 bitstream-lcd:   build/lcd/top_lcd.fs
 bitstream-lcd480: build/lcd480/top_lcd.fs
 bitstream-probe: build/probe/top_harness_probe.fs
+bitstream-probe2: build/probe2/top_harness_probe_v2.fs
 
 # 設計ごとの規則 (合成 → 配置配線 → ビットストリーム → pincheck)。$(1) は設計の名前
 # SystemVerilog は yosys-slang プラグイン (read_slang) で読む。
@@ -246,6 +260,8 @@ prog-lcd480: pincheck-lcd480
 	openFPGALoader -b $(BOARD) build/lcd480/top_lcd.fs
 prog-probe: pincheck-probe
 	openFPGALoader -b $(BOARD) build/probe/top_harness_probe.fs
+prog-probe2: pincheck-probe2
+	openFPGALoader -b $(BOARD) build/probe2/top_harness_probe_v2.fs
 
 # フラッシュ: VDP を 0x000000、3D GPU を 0x100000 に (電源を入れると VDP。RECONFIG で入れ替わる)
 flash: pincheck-vdp pincheck-gpu3d
@@ -272,11 +288,12 @@ harness-fw:
 	@mkdir -p $(HARNESS_FW_BUILD)
 	$(PICO) python3 scripts/gen_pins_h.py $(HARNESS_PINS) $(HARNESS_FW_BUILD)/pins.h
 	$(PICO) sh -c 'cmake -S harness/firmware -B $(HARNESS_FW_BUILD) -G Ninja \
-		-DPICO_BOARD=$(strip $(HARNESS_BOARD)) -DPICO_PLATFORM=$(strip $(HARNESS_PLATFORM)) \
+		-DPICO_BOARD=$(strip $(HARNESS_BOARD)) -DPICO_PLATFORM=$(strip $(HARNESS_PLATFORM)) -DHARNESS_RAM=$(if $(filter 1,$(strip $(HARNESS_RAM))),ON,OFF) \
 		&& cmake --build $(HARNESS_FW_BUILD)'
 	@ls $(HARNESS_UF2)
 
 # BOOTSEL で出てくるドライブに UF2 をコピーする (コンテナから USB は見えないのでホストで実行)
+# HARNESS_RAM=1 なら RAM だけで動かす (フラッシュの中身は残り、抜き差しで戻る。別のファームウェアが入っている RP2 を一時的に使うとき)
 harness-deploy: harness-fw
 	@if [ -z "$(RP2_MOUNT)" ]; then echo "RP2 の BOOTSEL ドライブが見つかりません (BOOT を押しながら USB をつなぐ)"; exit 1; fi
 	cp $(HARNESS_UF2) $(RP2_MOUNT)/
@@ -318,4 +335,4 @@ zip:
 	@echo "-> $(ZIP)"
 
 clean:
-	rm -rf $(BUILD) firmware/build $(HARNESS_FW_BUILD) certs.pem dist
+	rm -rf $(BUILD) firmware/build harness/firmware/build harness/firmware/build_v2 certs.pem dist

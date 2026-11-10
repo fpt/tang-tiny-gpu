@@ -45,7 +45,8 @@
       "pico_pin": 21,
       "hstx_bit": 4,
       "series_r": "33R",
-      "note": "GCLKT_0。SD の D2 と共有 (10k プルアップ)"
+      "idle": "high",
+      "note": "GCLKT_0。SD の D2 と共有 (10k プルアップ)。離すと High (idle)"
     },
     {
       "signal": "SCK",
@@ -53,7 +54,8 @@
       "fpga_dir": "input",
       "pico_gpio": 10,
       "pico_pin": 14,
-      "note": "SPI1 SCK。LED5 と共有"
+      "idle": "high",
+      "note": "SPI1 SCK。LED5 と共有 (LED が 3.3V につながっているので、離すと High。実機で確かめた)"
     },
     {
       "signal": "COPI",
@@ -61,7 +63,8 @@
       "fpga_dir": "input",
       "pico_gpio": 11,
       "pico_pin": 15,
-      "note": "SPI1 TX。LED4 と共有"
+      "idle": "high",
+      "note": "SPI1 TX。LED4 と共有 (LED が 3.3V につながっているので、離すと High。実機で確かめた)"
     },
     {
       "signal": "CIPO",

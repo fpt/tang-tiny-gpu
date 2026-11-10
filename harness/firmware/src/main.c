@@ -17,14 +17,16 @@
 //   freq <hz>            SPI の周波数
 //   reset [ms]           RESET を指定時間 High にする (既定 10ms)
 //   irqwait [ms]         IRQ の立ち上がりを待つ (既定 100ms)
-//   wiretest             配線テスト (FPGA に top_harness_probe が入っているとき)
+//   wiretest             配線テスト (FPGA に top_harness_probe、v2 は top_harness_probe_v2 が入っているとき)
 //   bootsel              BOOTSEL (UF2 書き込み) モードで再起動する
 //
 // 衝突させないための約束:
-//   - ハーネスのピンは、駆動するとき以外は常に「入力 + プルダウン」(release_all / release)
+//   - ハーネスのピンは、駆動するとき以外は常に「入力 + プルダウン」(release_all / release。Tang 側でプルアップされている線はプルアップ)
 //   - RP2 -> FPGA の線は正論理なので、プルダウンされた状態は「何もしていない」
-//   - SPI 線を駆動するのは、HEARTBEAT が直近 100ms 以内にトグルしている (FPGA に設計が入って動いている) ときだけ
-//   - ピンの向きと機能を変えるのはこのファイルだけ。ピン番号は harness/pins.json から生成した pins.h
+//   - SPI 線を駆動するのは、HEARTBEAT (v2 は VSYNC) が直近 100ms 以内にトグルしている (FPGA に設計が入って動いている) ときだけ
+//   - ピンの向きと機能を変えるのはこのファイルだけ。ピン番号は harness/pins.json (v2 は harness/kicad/v2/pins_v2.json) から生成した pins.h
+//
+// v1 (RP2040-Zero) と v2 (Pico 2) の違いは pins.h の信号の有無で分ける (PIN_HEARTBEAT は v1 だけ、PIN_HSTX_CLK は v2 だけ)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,10 +39,19 @@
 
 #define FW_NAME          "harness-bridge"
 #define FW_VERSION       3
-#define BRIDGE_SPI       spi0
+// SCK の GPIO から SPI の番号が決まる (GPIO 0〜7 / 16〜23 は SPI0、8〜15 / 24〜 は SPI1)。v1 は GP2 で SPI0、v2 は GP10 で SPI1
+#define BRIDGE_SPI       (((PIN_SCK >> 3) & 1) ? spi1 : spi0)
 #define READY_WINDOW_US  100000u
 #define MAX_SPI_BYTES    4096
 #define LINE_MAX         (16 + 2 * MAX_SPI_BYTES)
+
+#ifdef PIN_HSTX_CLK
+#define HARNESS_REV      "v2"
+#define READY_SIGNAL     "VSYNC"
+#else
+#define HARNESS_REV      "v1"
+#define READY_SIGNAL     "HEARTBEAT"
+#endif
 
 #ifndef HARNESS_BOARD
 #define HARNESS_BOARD "unknown"
@@ -48,9 +59,14 @@
 
 // ---------------------------------------------------------------- ピン
 
+// 入力にする。プルは基本プルダウンだが、Tang 側でプルアップされている線 (pins の idle_high。v2 の SCK / COPI は LED、
+// HSTX_CLK は 10k) はプルアップにする (プルダウンだと中間の電圧になり、FPGA から 0 / 1 が定まらない。実機で見た)
 static void release(unsigned gpio) {
+    bool up = false;
+    for (int i = 0; i < HARNESS_PIN_COUNT; i++)
+        if (HARNESS_PINS[i].gpio == gpio) up = HARNESS_PINS[i].idle_high;
     gpio_init(gpio);                   // SIO, 入力, 出力値 0
-    gpio_set_pulls(gpio, false, true);
+    gpio_set_pulls(gpio, up, !up);
 }
 
 // ハーネスの全ピン (と未使用の GP0/GP1) を入力 + プルダウンにする
@@ -85,7 +101,10 @@ static edge_t edge_hb, edge_vs, edge_irq;
 
 static void gpio_cb(uint gpio, uint32_t events) {
     if (!(events & GPIO_IRQ_EDGE_RISE)) return;
-    edge_t *e = gpio == PIN_HEARTBEAT ? &edge_hb : gpio == PIN_VSYNC ? &edge_vs : gpio == PIN_IRQ ? &edge_irq : NULL;
+    edge_t *e = gpio == PIN_VSYNC ? &edge_vs : gpio == PIN_IRQ ? &edge_irq : NULL;
+#ifdef PIN_HEARTBEAT
+    if (gpio == PIN_HEARTBEAT) e = &edge_hb;
+#endif
     if (!e) return;
     uint64_t now = time_us_64();
     if (e->last_us) e->period_us = (uint32_t)(now - e->last_us);
@@ -94,13 +113,20 @@ static void gpio_cb(uint gpio, uint32_t events) {
 }
 
 static void monitor_enable(void) {
-    gpio_set_irq_enabled_with_callback(PIN_HEARTBEAT, GPIO_IRQ_EDGE_RISE, true, gpio_cb);
-    gpio_set_irq_enabled(PIN_VSYNC, GPIO_IRQ_EDGE_RISE, true);
+    gpio_set_irq_enabled_with_callback(PIN_VSYNC, GPIO_IRQ_EDGE_RISE, true, gpio_cb);
+#ifdef PIN_HEARTBEAT
+    gpio_set_irq_enabled(PIN_HEARTBEAT, GPIO_IRQ_EDGE_RISE, true);
+#endif
     gpio_set_irq_enabled(PIN_IRQ, GPIO_IRQ_EDGE_RISE, true);
 }
 
+// FPGA に設計が入って動いているか (v1 は HEARTBEAT、v2 は VSYNC が直近 100ms 以内にトグルしている)
 static bool fpga_ready(void) {
+#ifdef PIN_HEARTBEAT
     uint64_t last = edge_hb.last_us;
+#else
+    uint64_t last = edge_vs.last_us;
+#endif
     return last != 0 && time_us_64() - last < READY_WINDOW_US;
 }
 
@@ -146,6 +172,7 @@ static int hexval(char c) {
 #define WIRETEST_SAMPLE_US 500000u
 #define FPGA_CLK_HZ        27000000.0
 
+#ifdef PIN_HEARTBEAT
 // FPGA -> RP2 の各線が使うカウンタのビット (rtl/gowin/top_harness_probe.sv と合わせる)
 static const struct { unsigned gpio; int bit; } PROBE_BITS[] = {
     {PIN_CIPO, 10}, {PIN_IRQ, 11}, {PIN_VSYNC, 12}, {PIN_HEARTBEAT, 13}, {PIN_ERROR, 14},
@@ -156,6 +183,60 @@ static const struct { unsigned gpio; int bit; } PROBE_BITS[] = {
 static const struct { unsigned drive; unsigned echo; } LOOPBACK[] = {
     {PIN_SCK, PIN_CIPO}, {PIN_COPI, PIN_IRQ}, {PIN_CS, PIN_VSYNC}, {PIN_RESET, PIN_HEARTBEAT},
 };
+#else
+// v2: FPGA -> RP2 は 3 本 (rtl/gowin/top_harness_probe_v2.sv と合わせる)
+static const struct { unsigned gpio; int bit; } PROBE_BITS[] = {
+    {PIN_CIPO, 10}, {PIN_IRQ, 11}, {PIN_VSYNC, 12},
+};
+
+// RP2 -> FPGA の線と、FPGA が返す番号。VSYNC が Low の間は {IRQ, CIPO} が番号の下 2 ビット、High の間は上 2 ビット
+static const struct { unsigned drive; unsigned code; } LOOPBACK[] = {
+    {PIN_SCK, 1}, {PIN_COPI, 2}, {PIN_CS, 3}, {PIN_RESET, 4},
+    {PIN_HSTX_D0, 5}, {PIN_HSTX_D1, 6}, {PIN_HSTX_D2, 7}, {PIN_HSTX_D3, 8}, {PIN_HSTX_CLK, 9},
+};
+
+static bool idle_high(unsigned gpio) {
+    for (int i = 0; i < HARNESS_PIN_COUNT; i++)
+        if (HARNESS_PINS[i].gpio == gpio) return HARNESS_PINS[i].idle_high;
+    return false;
+}
+
+// 1ms (VSYNC 3 周期ほど) 読んで、VSYNC の Low / High のそれぞれで {IRQ, CIPO} がほぼ一定 (9 割以上同じ値) なら番号を返す。
+// そうでなければ (エコーになっていない = FPGA に線が届いていない。エコーでないときは CIPO / IRQ が半周期に数回トグルする) -1。
+// VSYNC (52) は HDMI の DDC_CLK と共有で 2.2k のプルアップとケーブルがつながり、エッジがなまって揺れることがあるので、
+// VSYNC が変わってから 10us の間は読まない (半周期は 152us)。
+// toggle が 0 以上なら、その GPIO (出力にしてあること) を読みながら反転させ続ける (HSTX_CLK はクロックとして受けるので)
+static int read_code(int toggle) {
+    uint32_t count[2][4] = {{0}};
+    uint32_t prev_vs = 2;
+    uint64_t changed_us = 0;
+    if (toggle >= 0) {
+        const uint64_t warm = time_us_64() + 100;
+        while (time_us_64() < warm) gpio_xor_mask(1u << toggle);
+    }
+    const uint64_t end = time_us_64() + 1000;
+    uint64_t now;
+    while ((now = time_us_64()) < end) {
+        if (toggle >= 0) gpio_xor_mask(1u << toggle);
+        uint32_t v = gpio_get_all();
+        uint32_t vs = (v >> PIN_VSYNC) & 1;
+        if (vs != prev_vs) { prev_vs = vs; changed_us = now; continue; }
+        if (now - changed_us < 10) continue;
+        count[vs][((v >> PIN_IRQ) & 1) << 1 | ((v >> PIN_CIPO) & 1)]++;
+    }
+    int code[2];
+    for (int h = 0; h < 2; h++) {
+        uint32_t total = 0, best = 0;
+        code[h] = -1;
+        for (int k = 0; k < 4; k++) {
+            total += count[h][k];
+            if (count[h][k] > best) { best = count[h][k]; code[h] = k; }
+        }
+        if (total < 20 || best * 10 < total * 9) return -1;
+    }
+    return code[1] << 2 | code[0];
+}
+#endif
 
 static void cmd_wiretest(void) {
     const uint32_t from_fpga = harness_mask(true);
@@ -168,12 +249,14 @@ static void cmd_wiretest(void) {
     // 第 1 段階: 読むだけ
     static uint32_t rises[32];
     memset(rises, 0, sizeof rises);
-    uint32_t prev = gpio_get_all(), ever_high = prev;
+    uint32_t prev = gpio_get_all(), ever_high = prev, ever_low = ~prev;
+    (void)ever_low;
     const uint64_t end = time_us_64() + WIRETEST_SAMPLE_US;
     while (time_us_64() < end) {
         uint32_t v = gpio_get_all();
         uint32_t rise = v & ~prev;
         ever_high |= v;
+        ever_low |= ~v;
         while (rise) {
             rises[__builtin_ctz(rise)]++;
             rise &= rise - 1;
@@ -190,10 +273,15 @@ static void cmd_wiretest(void) {
         printf("%s{\"sig\":\"%s\",\"rises\":%lu,\"expect\":%.0f,\"ok\":%s}", i ? "," : "", pin_name(g),
                (unsigned long)rises[g], expect, ok ? "true" : "false");
     }
-    // RP2 -> FPGA の線は FPGA が駆動していないはずなので、ずっと Low
+    // RP2 -> FPGA の線は FPGA が駆動していないはずなので、ずっと Low (v2 の SCK / COPI / HSTX_CLK は Tang 側のプルアップでずっと High)
     for (int g = 0; g < 32; g++) {
         if (!(to_fpga & (1u << g))) continue;
+#ifdef PIN_HEARTBEAT
         bool ok = rises[g] == 0 && !(ever_high & (1u << g));
+#else
+        bool moved = idle_high(g) ? (ever_low >> g) & 1 : (ever_high >> g) & 1;
+        bool ok = rises[g] == 0 && !moved;
+#endif
         pass &= ok;
         printf(",{\"sig\":\"%s\",\"rises\":%lu,\"high_seen\":%s,\"ok\":%s}", pin_name(g), (unsigned long)rises[g],
                (ever_high & (1u << g)) ? "true" : "false", ok ? "true" : "false");
@@ -201,6 +289,7 @@ static void cmd_wiretest(void) {
     printf("]");
 
     // 第 2 段階: 第 1 段階が全部通ったときだけ、1 本ずつ 100us High にして折り返しを見る
+#ifdef PIN_HEARTBEAT
     if (pass) {
         printf(",\"phase2\":[");
         for (size_t i = 0; i < count_of(LOOPBACK); i++) {
@@ -220,6 +309,39 @@ static void cmd_wiretest(void) {
     } else {
         printf(",\"phase2\":\"skipped\"");
     }
+#else
+    // v2: 1 本ずつ立てて (離すと High の線は Low に、HSTX_CLK はトグル)、FPGA が返す番号を見る。
+    // 15 は 2 本以上が立っている (短絡)、-1 は返ってこない (断線)
+    if (pass) {
+        printf(",\"phase2\":[");
+        for (size_t i = 0; i < count_of(LOOPBACK); i++) {
+            unsigned d = LOOPBACK[i].drive;
+            gpio_put(d, !idle_high(d));
+            gpio_set_dir(d, GPIO_OUT);
+            sleep_us(100);
+            int code = read_code(d == PIN_HSTX_CLK ? (int)d : -1);
+            // RP2350-E9: High を出していたピンを入力 + 内蔵プルダウンに戻すと、約 2V に留まって FPGA から High に見える
+            // (外付けのプルダウンがない HSTX の線)。いったん Low を出してから離す
+            if (!idle_high(d)) {
+                gpio_put(d, 0);
+                sleep_us(10);
+            }
+            release(d);
+            sleep_us(200);
+            bool ok = code == (int)LOOPBACK[i].code;
+            pass &= ok;
+            printf("%s{\"drive\":\"%s\",\"expect\":%u,\"seen\":%d,\"ok\":%s}", i ? "," : "",
+                   pin_name(d), LOOPBACK[i].code, code, ok ? "true" : "false");
+        }
+        // 何も立てていないときは、エコーにならない (番号が読めない) はず
+        int idle = read_code(-1);
+        bool ok = idle < 0;
+        pass &= ok;
+        printf(",{\"drive\":\"none\",\"seen\":%d,\"ok\":%s}]", idle, ok ? "true" : "false");
+    } else {
+        printf(",\"phase2\":\"skipped\"");
+    }
+#endif
 
     release_all();
     monitor_enable();
@@ -239,8 +361,10 @@ static void cmd_status(void) {
     for (int i = 0; i < HARNESS_PIN_COUNT; i++)
         printf("%s\"%s\":%d", i ? "," : "", HARNESS_PINS[i].name, gpio_get(HARNESS_PINS[i].gpio));
     printf("},");
+#ifdef PIN_HEARTBEAT
     print_edge("heartbeat", &edge_hb);
     printf(",");
+#endif
     print_edge("vsync", &edge_vs);
     printf(",");
     print_edge("irq", &edge_irq);
@@ -258,7 +382,7 @@ static void cmd_spi(const char *hex) {
     }
     if (!fpga_ready()) {
         n_spi_refused++;
-        { reply_error("not ready: HEARTBEAT is not toggling, nothing was driven"); return; }
+        { reply_error("not ready: " READY_SIGNAL " is not toggling, nothing was driven"); return; }
     }
     spi_xfer(tx, rx, len / 2);
     n_spi_ok++;
@@ -337,7 +461,7 @@ static void cmd_spib(const char *arg) {
     if (!in_bytes(tx, (size_t)n, 2000000)) { reply_error("spib: timeout waiting for data"); return; }
     if (!fpga_ready()) {
         n_spi_refused++;
-        reply_error("not ready: HEARTBEAT is not toggling, nothing was driven");
+        reply_error("not ready: " READY_SIGNAL " is not toggling, nothing was driven");
         return;
     }
     spi_xfer(tx, rx, (size_t)n);
@@ -400,7 +524,7 @@ static void cmd_stream(char *arg) {
             rest -= k;
         }
         n_spi_refused++;
-        reply_error("not ready: HEARTBEAT is not toggling, nothing was driven");
+        reply_error("not ready: " READY_SIGNAL " is not toggling, nothing was driven");
         return;
     }
     int dma = dma_claim_unused_channel(true);
@@ -469,7 +593,8 @@ static void handle(char *line) {
     if (!cmd) return;
 
     if (!strcmp(cmd, "ping")) {
-        printf("{\"ok\":true,\"fw\":\"%s\",\"version\":%d,\"board\":\"%s\"}\n", FW_NAME, FW_VERSION, HARNESS_BOARD);
+        printf("{\"ok\":true,\"fw\":\"%s\",\"version\":%d,\"board\":\"%s\",\"harness\":\"%s\"}\n", FW_NAME, FW_VERSION,
+               HARNESS_BOARD, HARNESS_REV);
     } else if (!strcmp(cmd, "status")) {
         cmd_status();
     } else if (!strcmp(cmd, "spib")) {

@@ -11,7 +11,7 @@ with open(pins_path) as f:
     pins = json.load(f)["pins"]
 
 lines = [
-    "// 自動生成 (scripts/gen_pins_h.py harness/pins.json)。直接編集しない",
+    f"// 自動生成 (scripts/gen_pins_h.py {pins_path})。直接編集しない",
     "#pragma once",
     "#include <stdbool.h>",
     "",
@@ -24,13 +24,15 @@ lines += [
     "    const char *name;",
     "    unsigned    gpio;",
     "    bool        fpga_output;   // true: FPGA が駆動し RP2 は読むだけ",
+    "    bool        idle_high;     // 離したときに High (Tang 側のプルアップ)。RP2 -> FPGA の線は Low にして立てる",
     "} harness_pin_t;",
     "",
     "static const harness_pin_t HARNESS_PINS[] = {",
 ]
 for p in pins:
     out = "true" if p["fpga_dir"] == "output" else "false"
-    lines.append(f'    {{"{p["signal"]}", {p["pico_gpio"]}, {out}}},')
+    idle = "true" if p.get("idle") == "high" else "false"
+    lines.append(f'    {{"{p["signal"]}", {p["pico_gpio"]}, {out}, {idle}}},')
 lines += [
     "};",
     f"#define HARNESS_PIN_COUNT {len(pins)}",
