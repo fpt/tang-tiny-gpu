@@ -158,6 +158,15 @@ python3 tools/harness/harness.py scenario scenarios/m5_basic.json --link hstx --
 python3 tools/harness/harness.py hstxdemo city --hstx sys2 --frames 10 --reps 6            # G5 の場面を Pico の RAM から流して fps
 ```
 
+G5 の場面を Pico の RAM から HSTX (`sys2`) で流したとき (`hstxdemo`、10 フレームを 12 回):
+
+| 場面 | SPI (USB から) | HSTX (Pico の RAM から) | そのときのリンク |
+| --- | --- | --- | --- |
+| logo | 33.5fps | **60.7fps** | 743KB/s |
+| tunnel | 47.3 | **60.8** | 502KB/s |
+| room | 49.8 | **60.9** | 454KB/s |
+| city | 29.8 | **46.5** (GPU が律速) | 622KB/s |
+
 ブリッジのコマンドは `hstx <sys|usb> <div>` / `hstx off`、`hstxw`、`hstxload`、`hstxrep`、`hstxprobe` (ピンのエッジを数える確かめ用)。`harness/firmware/src/main.c` の先頭。
 
 ### 3.3 立ち上げで分かったこと
