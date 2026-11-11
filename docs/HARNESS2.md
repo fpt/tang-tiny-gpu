@@ -80,9 +80,9 @@ Pico ピン配置では HSTX の 8 本が 16〜25 に連続して並ぶので、
   (71、19、20 を FPGA が駆動するため)。**フラッシュも v2 の組にしておく** (`make flash`)。v1 の組が残っていると、RECONFIG で v1 の 3D GPU が立ち上がり、
   Pico が SPI に使う 19 / 20 を LED として駆動する
 - ファームウェア (済み): `pins.h` を `pins_v2.json` から作り、`PIN_HEARTBEAT` があるかどうかで v1 / v2 を分ける。v2 は `fpga_ready()` を VSYNC のエッジで、
-  SPI1 (SCK の GPIO から決める)、`wiretest` は v2 用 (2.4)。残り: HSTX の送り出し (`stream` を HSTX に)
+  SPI1 (SCK の GPIO から決める)、`wiretest` は v2 用 (2.4)。HSTX の送り出し (`hstx*`、3 章)
 - FPGA (済み): `top_v2.sv` は `top.sv` を包んでピンだけ v2 にする。HEARTBEAT、ERROR、LED4 / LED5 はピンに出さない (LED0〜3 は残す)。
-  配線テストは `top_harness_probe_v2`。残り: HSTX の受信 (71〜74、80)
+  配線テストは `top_harness_probe_v2`。HSTX の受信 (71〜74、80。3 章)
 - `harness.py` (済み): selftest はブリッジの `status` に HEARTBEAT がなければ VSYNC で見る (ready、RESET で止まること。300ms で約 18 回)
 
 ### 2.4 配線テスト (`wiretest`、実機で確かめた)
@@ -123,33 +123,66 @@ RECONFIG_N (ピン 9) は Tang Nano 20K のヘッダに出ていない (基板�
 - 切り替えは約 1.7 秒 (VDP → 3D、3D → VDP とも)。`gowin_pack -c` (圧縮) は GW2A では効かない (同じファイル)。速くするならビットストリームのヘッダの読み込みの速さ
 - 電源を入れると 0x000000 (VDP) から立ち上がる。切り替えたら SDRAM の中身 (テクスチャなど) はホストが送り直す
 
-## 3. FPGA 側
+## 3. HSTX (動いている)
 
-- 80 (GCLKT_0) を `IBUF` → グローバルクロック (データの入力としては読めない。2.4)、71〜74 を `IDDR` で受けて 8bit/クロック。非同期 FIFO (BSRAM) で `clk_sys` へ
-- パケット: マジック 32bit + 長さ + ペイロード + CRC16。ニブル単位でマジックを探して同期、CRC 不一致は捨ててカウンタを上げる
-- SPI (86/20/19/75) と IRQ (85)、VSYNC (52)、RESET (79) は v1 と同じモジュールのままピンだけ変える。HEARTBEAT の出力はなくす。SPI と HSTX は同じパケット解析器 → コマンド FIFO に入れる
-- `.cst`:
+コマンドを RP2350 の HSTX で送る。レジスタの読み書きと、空きを確かめる `GPU_FREE` の読み出しは SPI のまま。
 
+### 3.1 線と速さ
+
+- RP2350: HSTX のビット 0〜3 (GP12〜15) がシフトレジスタの下位 4 ビット、ビット 4 (GP16) が作ったクロック。1 サイクルに 4 ビットずつ 8 回で 1 ワード
+  (`SHIFT` 4、`N_SHIFTS` 8)。クロックは `CLKDIV` 2 / `CLKPHASE` 1 で、ニブルの真ん中に立ち上がり (下位) と立ち下がり (上位)。
+  クロックは送るデータがあるときだけ動き、止まると Low
+- **clk_hstx の分周は 2 ビットしかない** (1〜4)。元は clk_sys (150MHz) か pll_usb (48MHz)。1 サイクルに 1 ニブルなので clk_hstx / 2 バイト/秒:
+
+| `--hstx` | clk_hstx | 上限 | 実測 (`hstxbench`、NOP 1MiB) |
+| --- | --- | --- | --- |
+| `usb4` (既定、立ち上げ用) | 12MHz | 6MB/s | 5.9MB/s |
+| `usb2` | 24MHz | 12MB/s | 11.8MB/s |
+| `sys4` | 37.5MHz | 18.75MB/s | 18.5MB/s |
+| `sys3` | 50MHz | 25MB/s | 24.6MB/s |
+| **`sys2`** | 75MHz | 37.5MB/s | **36.9MB/s** (エラーなし) |
+| `sys1` | 150MHz | 75MB/s | CRC のエラーとあふれ (FPGA が取れない) |
+
+- FPGA ([`hstx_rx.sv`](../rtl/vdp/hstx_rx.sv)): 80 (GCLKT_0) をクロックとして受け、立ち上がりで下位、立ち下がりで上位のニブルを取って立ち下がりでバイトにする。
+  16 バイトの非同期 FIFO (グレイコードのポインタ、FF) で `clk_sys` へ。パケットを解析して、ワードをコマンド FIFO ([`gpu.sv`](../rtl/vdp/gpu.sv) の `ext_*`) に入れる。
+  受信の数はレジスタ `0x60`〜 (SPECIFICATION.md)
+- パケット: マジック `55 AA 5A A5`、長さ (ワード数、16bit)、ワード、CRC-16 (CCITT、初期値 FFFF)。全体で 4 バイトの倍数になる (8 + 4 × 長さ)
+- 流し方: ブリッジがパケットを送る前に SPI で `GPU_FREE` を読み、「パケットのワード数 + まだ送っている途中の DMA の残り + 余裕 32」以上空いていれば送る。
+  空きを読む SPI が遅いとパケットごとの待ちが律速になる (1MHz では 18MB/s で頭打ち。8MHz にする)。パケットは 128 ワード (VDP の FIFO 512 に 2 つと余裕が入る)
+
+### 3.2 使い方
+
+```bash
+python3 tools/harness/harness.py hstxbench --hstx sys2                     # NOP を Pico の RAM から流して速さを測る
+python3 tools/harness/harness.py scenario scenarios/m5_basic.json --link hstx --hstx sys2   # コマンドを HSTX で送る (USB の往復はパケットごと)
+python3 tools/harness/harness.py hstxdemo city --hstx sys2 --frames 10 --reps 6            # G5 の場面を Pico の RAM から流して fps
 ```
-IO_LOC "hstx_clk"  80; IO_PORT "hstx_clk"  IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "hstx_d[0]" 71; IO_PORT "hstx_d[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "hstx_d[1]" 72; IO_PORT "hstx_d[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "hstx_d[2]" 73; IO_PORT "hstx_d[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "hstx_d[3]" 74; IO_PORT "hstx_d[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "spi_sck"   20; IO_PORT "spi_sck"   IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "spi_copi"  19; IO_PORT "spi_copi"  IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "spi_cipo"  75; IO_PORT "spi_cipo"  IO_TYPE=LVCMOS33 DRIVE=8;
-IO_LOC "spi_cs"    86; IO_PORT "spi_cs"    IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "irq"       85; IO_PORT "irq"       IO_TYPE=LVCMOS33 DRIVE=8;
-IO_LOC "vsync_out" 52; IO_PORT "vsync_out" IO_TYPE=LVCMOS33 DRIVE=8;
-IO_LOC "reset_in"  79; IO_PORT "reset_in"  IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-```
+
+G5 の場面を Pico の RAM から HSTX (`sys2`) で流したとき (`hstxdemo`、10 フレームを 12 回):
+
+| 場面 | SPI (USB から) | HSTX (Pico の RAM から) | そのときのリンク |
+| --- | --- | --- | --- |
+| logo | 33.5fps | **60.7fps** | 743KB/s |
+| tunnel | 47.3 | **60.8** | 502KB/s |
+| room | 49.8 | **60.9** | 454KB/s |
+| city | 29.8 | **46.5** (GPU が律速) | 622KB/s |
+
+ブリッジのコマンドは `hstx <sys|usb> <div>` / `hstx off`、`hstxw`、`hstxload`、`hstxrep`、`hstxprobe` (ピンのエッジを数える確かめ用)。`harness/firmware/src/main.c` の先頭。
+
+### 3.3 立ち上げで分かったこと
+
+- **clk_hstx の分周は 2 ビット**: `clock_configure_int_divider(clk_hstx, …, 255)` は 3 になり 50MHz で動いた。`hstx` は周波数を測って返す
+- **立ち下がりの FF の非同期クリアで、書き込みのポインタが進まなかった** (ARCHITECTURE.md の 10 章)。FIFO のポインタはリセットしない
+- HSTX を有効にした直後の最初のパケットは 1 バイト欠けることがある (CLK の線は SD の 10k でプルアップされていて、有効にすると Low に落ちる)。
+  欠けたパケットは捨てられ、次のパケットのマジックで同期し直す。`0x60` に書くと解析もやり直す
+- 本番の速さで HSTX が効くのは RP2350 がコマンドを作るとき。PC から USB で送る今のハーネスでは USB (約 900KB/s) が律速で、`--link hstx` はむしろ遅い
+  (パケットごとに USB の往復がある)
 
 ## 4. v1 からの変更
 
 | | v1 (RP2040-Zero) | v2 (Pico 2) |
 |---|---|---|
-| 本線 | SPI 8MHz | HSTX 4 + CLK (37.5MHz DDR、37MB/s)。SPI はレジスタの読み書きに残る |
+| 本線 | SPI 8MHz | HSTX 4 + CLK (37.5MHz DDR、実測 36.9MB/s)。SPI はレジスタの読み書きと空きの確かめに残る |
 | SPI の GPIO | SPI0 GP2〜5 | SPI1 GPIO 8〜11 (`pins.h` の番号と SPI インスタンスだけ) |
 | 戻り線 | IRQ, VSYNC, HEARTBEAT, ERROR, LED0〜5 | IRQ, VSYNC (HEARTBEAT、ERROR、LED は廃止。`wiretest` の表から外す。ready は VSYNC で判定) |
 | LCD との衝突 | 41, 42, 48 (VSYNC/HEARTBEAT/ERROR) | なし (LCD_INIT の 15〜18 も空いている) |

@@ -19,6 +19,12 @@
 //   irqwait [ms]         IRQ の立ち上がりを待つ (既定 100ms)
 //   wiretest             配線テスト (FPGA に top_harness_probe、v2 は top_harness_probe_v2 が入っているとき)
 //   bootsel              BOOTSEL (UF2 書き込み) モードで再起動する
+//   (v2 だけ。HSTX、docs/HARNESS2.md の 3 章。パケットは rtl/vdp/hstx_rx.sv)
+//   hstx <sys|usb> <div> HSTX を clk_hstx = (clk_sys 150MHz か pll_usb 48MHz) / div (1〜4。clk_hstx の分周は 2 ビットしかない) で動かす。
+//                        hstx off で止めてピンを離す。ニブルを 1 サイクルに 1 つ (clk_hstx / 2 バイト/秒)、クロックは CLKDIV 2 / CLKPHASE 1
+//   hstxw <n> <free>     改行の直後に n バイト (4 の倍数) の生データ。レジスタ <free> (GPU_FREE) で空きを待ってから、1 つのパケットで送る
+//   hstxload <n> [p]     改行の直後に n バイト。p ワード (既定 256) ずつのパケットに組んで RAM に置く (CRC もここで計算)
+//   hstxrep <reps> <free>  hstxload の中身を reps 回、空きを見ながら DMA で流し、かかった時間を返す (USB を通さずにリンクの速さを測る)
 //
 // 衝突させないための約束:
 //   - ハーネスのピンは、駆動するとき以外は常に「入力 + プルダウン」(release_all / release。Tang 側でプルアップされている線はプルアップ)
@@ -238,7 +244,14 @@ static int read_code(int toggle) {
 }
 #endif
 
+#ifdef PIN_HSTX_CLK
+static void hstx_off(void);
+#endif
+
 static void cmd_wiretest(void) {
+#ifdef PIN_HSTX_CLK
+    hstx_off();                          // HSTX のピンも離す
+#endif
     const uint32_t from_fpga = harness_mask(true);
     const uint32_t to_fpga   = harness_mask(false);
     bool pass = true;
@@ -587,6 +600,234 @@ static void cmd_stream(char *arg) {
     printf("{\"ok\":true,\"n\":%ld,\"xfers\":%lu,\"waits\":%lu}\n", n, (unsigned long)xfers, (unsigned long)waits);
 }
 
+// ---------------------------------------------------------------- HSTX (ハーネス v2)
+#ifdef PIN_HSTX_CLK
+#include "hardware/clocks.h"
+#include "hardware/resets.h"
+#include "hardware/structs/hstx_ctrl.h"
+#include "hardware/structs/hstx_fifo.h"
+
+#define HSTX_MAGIC  0xA55AAA55u          // バイトの順で 55 AA 5A A5
+#define HSTX_GUARD  32u                  // 送ったが GPU の FIFO にまだ入っていないワード (HSTX の FIFO 8 + FPGA のバイトの FIFO など) の見積もり
+#define REP_WORDS   (48u * 1024u)        // hstxload の RAM (192KB)
+
+static uint32_t hstx_hz;                 // 0 なら止めている
+static uint16_t crc_table[256];
+static uint32_t rep_buf[REP_WORDS];      // パケットに組んだもの
+static uint32_t rep_len;                 // rep_buf のワード数
+static uint32_t rep_payload;             // その中のコマンドのワード数
+static uint32_t rep_pwords;              // 1 パケットのコマンドのワード数 (最後だけ短い)
+
+static void crc_init(void) {
+    for (int i = 0; i < 256; i++) {
+        uint16_t c = (uint16_t)(i << 8);
+        for (int k = 0; k < 8; k++) c = (uint16_t)((c & 0x8000) ? (c << 1) ^ 0x1021 : c << 1);
+        crc_table[i] = c;
+    }
+}
+
+static inline uint16_t crc16_word(uint16_t c, uint32_t w) {
+    for (int k = 0; k < 4; k++, w >>= 8) c = (uint16_t)((c << 8) ^ crc_table[(c >> 8) ^ (w & 0xFF)]);
+    return c;
+}
+
+// パケットに組む (マジック、長さ、ワード、CRC。ワードは 2 バイトずれるので、隣のワードと半分ずつ合わせる)。dst に n + 2 ワード書く
+static uint32_t hstx_pack(uint32_t *dst, const uint32_t *p, uint32_t n) {
+    uint16_t crc = 0xFFFF;
+    for (uint32_t i = 0; i < n; i++) crc = crc16_word(crc, p[i]);
+    uint32_t k = 0;
+    dst[k++] = HSTX_MAGIC;
+    if (n == 0) {
+        dst[k++] = (uint32_t)crc << 16;
+        return k;
+    }
+    dst[k++] = n | p[0] << 16;
+    for (uint32_t i = 1; i < n; i++) dst[k++] = p[i - 1] >> 16 | p[i] << 16;
+    dst[k++] = p[n - 1] >> 16 | (uint32_t)crc << 16;
+    return k;
+}
+
+static void hstx_off(void) {
+    hstx_ctrl_hw->csr = 0;
+    for (unsigned g = PIN_HSTX_D0; g <= PIN_HSTX_CLK; g++) release(g);
+    hstx_hz = 0;
+}
+
+static void hstx_on(bool from_usb, uint32_t div) {
+    if (from_usb) clock_configure_int_divider(clk_hstx, 0, CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB, 48000000, div);
+    else          clock_configure_int_divider(clk_hstx, 0, CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLK_SYS, clock_get_hz(clk_sys), div);
+    unreset_block_num_wait_blocking(RESET_HSTX);
+    hstx_ctrl_hw->csr = 0;
+    // 出力のビット n は GPIO 12 + n。D0〜D3 (GP12〜15) はシフトレジスタの下位 4 ビット (前半も後半も同じ = 1 サイクルに 1 ニブル)、CLK (GP16) はクロック
+    for (unsigned i = 0; i < 4; i++)
+        hstx_ctrl_hw->bit[PIN_HSTX_D0 - 12 + i] = i << HSTX_CTRL_BIT0_SEL_P_LSB | i << HSTX_CTRL_BIT0_SEL_N_LSB;
+    hstx_ctrl_hw->bit[PIN_HSTX_CLK - 12] = HSTX_CTRL_BIT0_CLK_BITS;
+    // 4 ビットずつ 8 回で 1 ワード。クロックは 2 サイクルで 1 周期、ニブルの真ん中に立ち上がり・立ち下がり (CLKPHASE 1)
+    hstx_ctrl_hw->csr = HSTX_CTRL_CSR_EN_BITS | 2u << HSTX_CTRL_CSR_CLKDIV_LSB | 1u << HSTX_CTRL_CSR_CLKPHASE_LSB |
+                        8u << HSTX_CTRL_CSR_N_SHIFTS_LSB | 4u << HSTX_CTRL_CSR_SHIFT_LSB;
+    for (unsigned g = PIN_HSTX_D0; g <= PIN_HSTX_CLK; g++) gpio_set_function(g, GPIO_FUNC_HSTX);
+    hstx_hz = frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_HSTX) * 1000;   // 測った値 (設定がそのとおりか確かめる)
+}
+
+static inline void hstx_put(uint32_t w) {
+    while (hstx_fifo_hw->stat & HSTX_FIFO_STAT_FULL_BITS) tight_loop_contents();
+    hstx_fifo_hw->fifo = w;
+}
+
+static void hstx_wait_empty(void) {
+    while (!(hstx_fifo_hw->stat & HSTX_FIFO_STAT_EMPTY_BITS)) tight_loop_contents();
+    busy_wait_us(1);                     // シフトレジスタの最後のワード
+}
+
+// GPU の FIFO の空きが need ワード以上になるまで待つ。dma >= 0 なら、その DMA がまだ送っていないワードも足す (読むたびに計り直す)。
+// SPI のピンは呼ぶ側で on にしておく。期限切れなら false
+static int hstx_last_free;              // 失敗したときの報告用 (最後に読んだ空き。-1 は同期バイトが違った)
+
+static bool hstx_wait_free(uint8_t free_reg, uint32_t need, int dma, uint32_t *waits) {
+    absolute_time_t until = make_timeout_time_us(2000000);
+    while (true) {
+        // 送り終えていない DMA のワードもまだ GPU の FIFO に入っていない (TRANS_COUNT の上の 4 ビットは MODE)
+        uint32_t inflight = (dma >= 0 && dma_channel_is_busy((uint)dma)) ? dma_hw->ch[dma].transfer_count & 0x0FFFFFFFu : 0;
+        int fr = spi_read16(free_reg);
+        hstx_last_free = fr;
+        if (fr >= 0 && (uint32_t)fr >= need + inflight) return true;
+        (*waits)++;
+        if (time_reached(until)) return false;
+    }
+}
+
+static void cmd_hstx(const char *arg) {
+    char *a_div = strtok(NULL, " \t");
+    long div = a_div ? atol(a_div) : 0;
+    if (arg && !strcmp(arg, "off")) {
+        hstx_off();
+    } else if (arg && (!strcmp(arg, "sys") || !strcmp(arg, "usb")) && div >= 1 && div <= 4) {
+        if (!fpga_ready()) { reply_error("not ready: " READY_SIGNAL " is not toggling, nothing was driven"); return; }
+        hstx_on(!strcmp(arg, "usb"), (uint32_t)div);
+    } else {
+        reply_error("hstx: <sys|usb> <div 1..4> | off");
+        return;
+    }
+    printf("{\"ok\":true,\"clk_hstx\":%lu,\"bytes_per_s\":%lu}\n", (unsigned long)hstx_hz, (unsigned long)(hstx_hz / 2));
+}
+
+static void cmd_hstxw(char *arg) {
+    static uint32_t buf[MAX_SPI_BYTES / 4], pkt[MAX_SPI_BYTES / 4 + 2];
+    char *a_free = strtok(NULL, " \t");
+    long n = arg ? atol(arg) : 0;
+    if (n < 0 || n % 4 || n > MAX_SPI_BYTES || !a_free) { reply_error("hstxw: <n (multiple of 4, <= 4096)> <free>"); return; }
+    if (!in_bytes((uint8_t *)buf, (size_t)n, 2000000)) { reply_error("hstxw: timeout waiting for data"); return; }
+    if (!hstx_hz) { reply_error("hstxw: hstx is off"); return; }
+    if (!fpga_ready()) { reply_error("not ready: " READY_SIGNAL " is not toggling, nothing was driven"); return; }
+    uint32_t words = (uint32_t)n / 4, waits = 0;
+    spi_pins_on();
+    bool ok = hstx_wait_free((uint8_t)strtol(a_free, NULL, 0), words + HSTX_GUARD, -1, &waits);
+    spi_pins_off();
+    if (!ok) { reply_error("hstxw: FIFO stays full"); return; }
+    uint32_t k = hstx_pack(pkt, buf, words);
+    for (uint32_t i = 0; i < k; i++) hstx_put(pkt[i]);
+    hstx_wait_empty();
+    printf("{\"ok\":true,\"words\":%lu,\"waits\":%lu}\n", (unsigned long)words, (unsigned long)waits);
+}
+
+// 確かめ用: HSTX で words ワード (交互の模様) を流しながら、ピンを読んで CLK と D0〜D3 のエッジを数える
+static void cmd_hstxprobe(const char *arg) {
+    long words = arg ? atol(arg) : 64;
+    char *a_pat = strtok(NULL, " \t");
+    uint32_t pat = a_pat ? (uint32_t)strtoul(a_pat, NULL, 0) : 0;
+    if (words < 1 || words > 4096) { reply_error("hstxprobe: <words 1..4096> [pattern]"); return; }
+    if (!hstx_hz) { reply_error("hstxprobe: hstx is off"); return; }
+    uint32_t edges[5] = {0}, prev = gpio_get_all(), pushed = 0, samples = 0, clk_high = 0, d0_high = 0;
+    uint64_t end = time_us_64() + 100000;
+    while (time_us_64() < end) {
+        if (pushed < (uint32_t)words && !(hstx_fifo_hw->stat & HSTX_FIFO_STAT_FULL_BITS)) {
+            hstx_fifo_hw->fifo = a_pat ? pat : (pushed & 1) ? 0x5A5A5A5Au : 0xA5A5A5A5u;
+            pushed++;
+        }
+        uint32_t v = gpio_get_all(), ch = v ^ prev;
+        samples++;
+        clk_high += (v >> PIN_HSTX_CLK) & 1;
+        d0_high += (v >> PIN_HSTX_D0) & 1;
+        prev = v;
+        for (unsigned i = 0; i < 5; i++) edges[i] += (ch >> (PIN_HSTX_D0 + i)) & 1;
+    }
+    printf("{\"ok\":true,\"pushed\":%lu,\"edges\":{\"D0\":%lu,\"D1\":%lu,\"D2\":%lu,\"D3\":%lu,\"CLK\":%lu},\"stat\":\"0x%08lx\"}\n",
+           (unsigned long)pushed, (unsigned long)edges[0], (unsigned long)edges[1], (unsigned long)edges[2], (unsigned long)edges[3],
+           (unsigned long)edges[4], (unsigned long)hstx_fifo_hw->stat);
+    printf("# samples=%lu clk_high=%lu d0_high=%lu\n", (unsigned long)samples, (unsigned long)clk_high, (unsigned long)d0_high);
+    printf("# csr=0x%08lx bit0=0x%08lx bit4=0x%08lx clk_hstx=%lu measured_khz=%lu reset=0x%08lx\n", (unsigned long)hstx_ctrl_hw->csr,
+           (unsigned long)hstx_ctrl_hw->bit[0], (unsigned long)hstx_ctrl_hw->bit[4], (unsigned long)clock_get_hz(clk_hstx),
+           (unsigned long)frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_HSTX), (unsigned long)resets_hw->reset);
+}
+
+static void cmd_hstxload(char *arg) {
+    static uint32_t chunk[1024];
+    char *a_p = strtok(NULL, " \t");
+    long n = arg ? atol(arg) : 0;
+    long pw = a_p ? atol(a_p) : 256;
+    if (n < 4 || n % 4 || pw < 1 || pw > 1024) { reply_error("hstxload: <n (multiple of 4)> [words per packet 1..1024]"); return; }
+    uint32_t words = (uint32_t)n / 4;
+    uint32_t packets = (words + (uint32_t)pw - 1) / (uint32_t)pw;
+    bool fits = words + 2 * packets <= REP_WORDS;
+    rep_len = rep_payload = 0;
+    rep_pwords = (uint32_t)pw;
+    for (uint32_t left = words; left; ) {
+        uint32_t k = left < (uint32_t)pw ? left : (uint32_t)pw;
+        if (!in_bytes((uint8_t *)chunk, k * 4, 2000000)) { rep_len = 0; reply_error("hstxload: timeout waiting for data"); return; }
+        if (fits) rep_len += hstx_pack(rep_buf + rep_len, chunk, k);
+        rep_payload += k;
+        left -= k;
+    }
+    if (!fits) { rep_len = rep_payload = 0; reply_error("hstxload: too large for the buffer"); return; }
+    printf("{\"ok\":true,\"words\":%lu,\"packets\":%lu,\"buffer_words\":%lu}\n",
+           (unsigned long)rep_payload, (unsigned long)packets, (unsigned long)rep_len);
+}
+
+static void cmd_hstxrep(char *arg) {
+    char *a_free = strtok(NULL, " \t");
+    long reps = arg ? atol(arg) : 0;
+    if (reps < 1 || !a_free) { reply_error("hstxrep: <reps> <free>"); return; }
+    if (!rep_len) { reply_error("hstxrep: nothing loaded (hstxload)"); return; }
+    if (!hstx_hz) { reply_error("hstxrep: hstx is off"); return; }
+    if (!fpga_ready()) { reply_error("not ready: " READY_SIGNAL " is not toggling, nothing was driven"); return; }
+    uint8_t free_reg = (uint8_t)strtol(a_free, NULL, 0);
+    int dma = dma_claim_unused_channel(true);
+    dma_channel_config c = dma_channel_get_default_config(dma);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_dreq(&c, DREQ_HSTX);
+    channel_config_set_read_increment(&c, true);
+    channel_config_set_write_increment(&c, false);
+    spi_pins_on();
+    uint32_t waits = 0, packets = 0;
+    const char *err = NULL;
+    uint64_t t0 = time_us_64();
+    for (long r = 0; r < reps && !err; r++) {
+        for (uint32_t off = 0; off < rep_len; ) {
+            uint32_t n = rep_buf[off + 1] & 0xFFFF;          // このパケットのワード数
+            uint32_t k = n + 2;
+            if (!hstx_wait_free(free_reg, n + HSTX_GUARD, dma, &waits)) { err = "hstxrep: FIFO stays full"; break; }
+            dma_channel_wait_for_finish_blocking(dma);
+            dma_channel_configure(dma, &c, &hstx_fifo_hw->fifo, rep_buf + off, k, true);
+            off += k;
+            packets++;
+        }
+    }
+    dma_channel_wait_for_finish_blocking(dma);
+    hstx_wait_empty();
+    uint64_t us = time_us_64() - t0;
+    spi_pins_off();
+    dma_channel_unclaim(dma);
+    if (err) {
+        printf("{\"ok\":false,\"error\":\"%s\",\"last_free\":%d,\"packets\":%lu}\n", err, hstx_last_free, (unsigned long)packets);
+        return;
+    }
+    uint64_t bytes = (uint64_t)rep_payload * 4 * (uint64_t)reps;
+    printf("{\"ok\":true,\"bytes\":%llu,\"us\":%llu,\"kb_per_s\":%lu,\"packets\":%lu,\"waits\":%lu}\n",
+           (unsigned long long)bytes, (unsigned long long)us, (unsigned long)(us ? bytes * 1000 / us : 0),
+           (unsigned long)packets, (unsigned long)waits);
+}
+#endif
+
 static void handle(char *line) {
     char *cmd = strtok(line, " \t");
     char *arg = strtok(NULL, " \t");
@@ -627,6 +868,18 @@ static void handle(char *line) {
         printf("{\"ok\":true,\"waited_us\":%lu}\n", (unsigned long)(edge_irq.last_us - start));
     } else if (!strcmp(cmd, "wiretest")) {
         cmd_wiretest();
+#ifdef PIN_HSTX_CLK
+    } else if (!strcmp(cmd, "hstx")) {
+        cmd_hstx(arg);
+    } else if (!strcmp(cmd, "hstxw")) {
+        cmd_hstxw(arg);
+    } else if (!strcmp(cmd, "hstxprobe")) {
+        cmd_hstxprobe(arg);
+    } else if (!strcmp(cmd, "hstxload")) {
+        cmd_hstxload(arg);
+    } else if (!strcmp(cmd, "hstxrep")) {
+        cmd_hstxrep(arg);
+#endif
     } else if (!strcmp(cmd, "bootsel")) {
         printf("{\"ok\":true}\n");
         stdio_flush();
@@ -643,6 +896,9 @@ int main(void) {
     stdio_init_all();
     spi_hz = spi_init(BRIDGE_SPI, 1000 * 1000);   // mode 0, 8bit, MSB first
     monitor_enable();
+#ifdef PIN_HSTX_CLK
+    crc_init();
+#endif
 
     static char line[LINE_MAX];
     bool overflow;

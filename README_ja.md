@@ -24,12 +24,13 @@ FPGA には **2 つのビットストリーム** があり、フラッシュに�
 - **VDP**: コマンド GPU (段階 M0〜M9)、エミュレータ向けのタイル / スプライト エンジンと Mode 7 (E1〜E4・E7)、
   [rs-kessel](https://github.com/fpt/rs-kessel) を載せるための 8bpp の面・BLIT4・STRETCH_BLIT・ライトマップ・音 (K1〜K5a) が実機で動いている
 - **3D GPU**: 段階 G0〜G5。上の 4 つの場面 (ロゴ、トンネル、映り込む玉の部屋、夜の街) は GPU だけなら
-  1 フレーム 290K〜960K クロック (60Hz の 1 フレームは 1,050K) で、どれも 60fps に間に合う。今は実機のリンク (下) が律速で 30〜50fps
+  1 フレーム 290K〜960K クロック (60Hz の 1 フレームは 1,050K)。Pico の RAM から HSTX で流すと、ロゴ・トンネル・部屋は 60fps、
+  街は 46fps (GPU が律速)。PC から USB + SPI で送ると 30〜50fps
 - **ビットストリームの切り替え**: フラッシュの multiboot (VDP 0x000000、3D GPU 0x100000) と RECONFIG_N (ピン 9) で動いている。ハーネスは、要るビットストリームが
   動いていなければ自分で切り替える
-- **ホストとのリンク**: 今は開発用のハーネスの SPI 8MHz (約 764KB/s)。既定はハーネス v2 (Pico 2、[docs/HARNESS2.md](docs/HARNESS2.md))。
-  前のハーネス v1 (RP2040-Zero、[docs/HARNESS.md](docs/HARNESS.md)) も `export HARNESS=v1` で使える。本番は RP2350 の HSTX (37MB/s の見込み) で、
-  v2 には線があるが、FPGA の受信はまだ。
+- **ホストとのリンク**: ハーネス v2 (Pico 2、[docs/HARNESS2.md](docs/HARNESS2.md)、既定) に SPI 7.5MHz (約 756KB/s) と RP2350 の **HSTX 36.9MB/s** (実測。本番のリンク)。
+  PC からのコマンドは USB (約 900KB/s) を通るので、HSTX が効くのは RP2350 がコマンドを作るとき。
+  前のハーネス v1 (RP2040-Zero、[docs/HARNESS.md](docs/HARNESS.md)、SPI だけ) も `export HARNESS=v1` で使える
   RP2350 の本番のファームウェア (`firmware/`) はまだ雛形
 - 段階の名前 (M / E / K / G) の意味は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) の「段階の記録」
 

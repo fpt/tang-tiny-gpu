@@ -38,6 +38,11 @@ usage: harness.py [--port PORT] <command> [args...]
                             HDMI キャプチャも比べる。--keep でそのまま表示を残す
   mem read <word_addr> [n]  SDRAM を 1 ワードずつ読む
   reconfig                  FPGA を再コンフィグする (RECONFIG に 0xA5)。フラッシュの multiboot で VDP と 3D GPU が入れ替わる
+  hstxbench [--words N] [--reps R]
+                            HSTX (ハーネス v2) の速さ: NOP を N ワード Pico の RAM に置き、R 回流して KB/s を出す (USB を通さない)。--hstx で速さ
+  hstxdemo <scene> [--frames K] [--reps R]
+                            G5 の 3D の場面の K フレームを Pico の RAM に置き、HSTX で R 回流して fps を出す (USB を通さないので GPU が律速)
+  --link hstx               (scenario / fps / demo など) GPU へのコマンドを SPI でなく HSTX (hstxw) で送る。レジスタの読み書きは SPI のまま
                             (make flash で両方を書いておく)。切り替わるまでの時間と VERSION を出す。
                             demo と scenarios/gpu3d/ のシナリオ・fps は、要るビットストリームが動いていなければ自分で切り替える
   mulprobe [--iterations N] 3D GPU のビットストリーム (make bitstream-gpu3d MUL_PROBE=1) の乗算器 (mul_probe、DSP) を端の値と乱数で確かめる
@@ -168,6 +173,12 @@ class HarnessError(Exception):
     pass
 
 
+GPU_LINK = "spi"          # --link: GPU へのコマンドを送る線 (spi / hstx)
+# --hstx: clk_hstx の元と分周 (分周は 1〜4 しかない)。ニブルを 1 サイクルに 1 つなので clk_hstx / 2 バイト/秒
+HSTX_SPEEDS = {"usb4": "usb 4", "usb3": "usb 3", "usb2": "usb 2", "sys4": "sys 4", "sys3": "sys 3", "sys2": "sys 2", "sys1": "sys 1"}
+HSTX_CHUNK = 128          # HSTX の 1 パケットのワード数 (VDP の FIFO 512 に、送っている途中のパケットと余裕 32 を足しても入る)
+
+
 class Gpu:
     """コマンド GPU (rtl/vdp/gpu.sv) にワードを送る。FIFO の空き (GPU_FREE) を見て、その分だけ送る"""
 
@@ -180,6 +191,14 @@ class Gpu:
     def send(self, words, timeout=10.0):
         data = b"".join((w & 0xFFFFFFFF).to_bytes(4, "little") for w in words)
         if not data:
+            return
+        if GPU_LINK == "hstx":
+            # ブリッジが GPU_FREE を SPI で読んで空きを待ち、HSTX で 1 パケットずつ送る (USB の往復はパケットごと)
+            for i in range(0, len(data), HSTX_CHUNK * 4):
+                chunk = data[i:i + HSTX_CHUNK * 4]
+                r = self.vdp.bridge.command(f"hstxw {len(chunk)} {REGS['GPU_FREE']}", timeout=timeout, payload=chunk)
+                if not r.get("ok"):
+                    raise HarnessError(r.get("error", "hstxw failed"))
             return
         if self.vdp.bridge.version() >= 3:
             # ブリッジが GPU_FREE を SPI で読みながら CMD に流す (USB の往復は 1 回)
@@ -710,6 +729,84 @@ def mulprobe(bridge, iterations):
             "by_sign": stats, "first_errors": first}
 
 
+def hstxbench(bridge, words, reps):
+    """HSTX の速さ: NOP を words ワード Pico の RAM に置き、reps 回流す。FPGA の受信の数 (0x60..) も読む"""
+    vdp = Vdp(bridge)
+    gpu = Gpu(vdp)
+    gpu.flush()
+    gpu.wait_idle()
+    vdp.write(0x60, [0])                                  # 受信の数を 0 に
+    r = bridge.command(f"hstxload {words * 4} {HSTX_CHUNK}", timeout=30.0, payload=bytes(words * 4))
+    if not r.get("ok"):
+        return r
+    bridge.command("freq 8000000")                       # 空きを読む SPI が遅いと、パケットごとの待ちが律速になる
+    try:
+        rep = bridge.command(f"hstxrep {reps} {REGS['GPU_FREE']}", timeout=60.0)
+    finally:
+        bridge.command("freq 1000000")
+    st = gpu.wait_idle()
+    raw = vdp.read(0x60, 8)
+    stats = {"pkts": raw[0], "crc_errs": raw[1], "sync_errs": raw[2], "drops": raw[3],
+             "bytes": int.from_bytes(raw[4:8], "little")}
+    want = words * 4 * reps
+    ok = rep.get("ok") and stats["crc_errs"] == 0 and stats["drops"] == 0 and stats["bytes"] == want % (1 << 32) \
+        and not st & (GPU_ST_ERROR | GPU_ST_OVERFLOW)
+    return {"ok": bool(ok), "replay": rep, "fpga": stats, "expected_bytes": want, "gpu_status": st}
+
+
+def hstxdemo(bridge, scene, frames, reps):
+    """G5 の場面の frames フレームを Pico の RAM に置き、HSTX で reps 回流す (同じ frames フレームのくり返し)。
+    USB を通さないので、リンクでなく GPU (と 60Hz の表示) が速さを決める"""
+    import demo3d
+    import gpu_model
+    vdp = Vdp(bridge)
+    gpu = Gpu(vdp)
+    switched = ensure_bitstream(bridge, True)
+    control = vdp.read1(REGS["CONTROL"])
+    words = []
+    for k in range(frames):
+        words += demo3d.frame_words(scene, k)
+    bridge.command("freq 8000000")
+    try:
+        gpu.flush()
+        gpu.wait_idle()
+        vdp.write(REGS["FB_BASE"], gpu_model.FB_BASE_RESET.to_bytes(2, "little"))
+        vdp.write(REGS["DRAW_BASE"], gpu_model.DRAW_BASE_RESET.to_bytes(2, "little"))
+        global GPU_LINK
+        link, GPU_LINK = GPU_LINK, "spi"                  # 準備 (テクスチャなど) は SPI で
+        try:
+            gpu.send(gpu_model.layer_reset_words() + demo3d.setup_words(scene))
+        finally:
+            GPU_LINK = link
+        gpu.wait_idle(timeout=20)
+        vdp.write(REGS["CONTROL"], [control | CONTROL_FB])
+        vdp.write(0x60, [0])
+        r = bridge.command(f"hstxload {len(words) * 4} {HSTX_CHUNK}", timeout=30.0,
+                           payload=b"".join((w & 0xFFFFFFFF).to_bytes(4, "little") for w in words))
+        if not r.get("ok"):
+            return r
+        under0 = vdp.read1(REGS["UNDERFLOW"])
+        f0 = vdp.read1(REGS["FRAME_COUNT"])
+        rep = bridge.command(f"hstxrep {reps} {REGS['GPU_FREE']}", timeout=120.0)
+        st = gpu.wait_idle(timeout=20)
+        f1 = vdp.read1(REGS["FRAME_COUNT"])
+        under = (vdp.read1(REGS["UNDERFLOW"]) - under0) & 0xFF
+        raw = vdp.read(0x60, 8)
+    finally:
+        bridge.command("freq 1000000")
+    drawn = frames * reps
+    seconds = rep.get("us", 0) / 1e6
+    stats = {"pkts": raw[0], "crc_errs": raw[1], "sync_errs": raw[2], "drops": raw[3], "bytes": int.from_bytes(raw[4:8], "little")}
+    ok = rep.get("ok") and under == 0 and not st & (GPU_ST_ERROR | GPU_ST_OVERFLOW) and stats["crc_errs"] == 0 and stats["drops"] == 0
+    r = {"ok": bool(ok), "scene": scene, "frames": drawn, "words_per_frame": round(len(words) / frames),
+         "seconds": round(seconds, 3), "fps": round(drawn / seconds, 1) if seconds else 0,
+         "link_kb_per_s": rep.get("kb_per_s"), "display_frames_in_8bit": (f1 - f0) & 0xFF, "underflow": under,
+         "gpu_status": st, "fpga": stats}
+    if switched:
+        r["switched"] = switched
+    return r
+
+
 def demo(bridge, frames, start, scene=None, shot=None):
     """M9 のデモ (demo.py) を流し続ける。フレームは WAIT_VBLANK で区切られるので、間に合っていれば 60 フレーム / 秒。
     scene があれば G5 の 3D の場面 (demo3d.py)。"all" なら logo → tunnel → room → city を 10 秒ずつくり返す
@@ -1014,6 +1111,11 @@ def main():
     ap.add_argument("--lead", type=int, default=1600, help="audio: samples to keep queued ahead of playback")
     ap.add_argument("--stream", action="store_true", help="audio: upload every refill (needs 192KB/s; harness v1 manages about 180)")
     ap.add_argument("--out", default=os.path.join(REPO, "build", "hw"), help="frametest: where to save capture/diff")
+    ap.add_argument("--link", choices=("spi", "hstx"), default="spi", help="how GPU commands are sent (hstx: harness v2)")
+    ap.add_argument("--hstx", default="usb4", choices=sorted(HSTX_SPEEDS),
+                    help="HSTX speed: clk_hstx source and divider (usb4 12MHz = 6MB/s ... sys2 75MHz = 37.5MB/s)")
+    ap.add_argument("--words", type=int, default=32768, help="hstxbench: NOP words loaded into the Pico")
+    ap.add_argument("--reps", type=int, default=8, help="hstxbench: times to replay them")
     ap.add_argument("command")
     ap.add_argument("args", nargs="*")
     a = ap.parse_args()
@@ -1028,11 +1130,23 @@ def main():
         r = subprocess.run(["make", progs[a.args[0]]], cwd=REPO, stdout=sys.stderr)
         result = {"ok": r.returncode == 0, "design": a.args[0]}
     elif a.command in ("reg", "selftest", "memtest", "mem", "frametest", "fb", "fbtest", "scenario", "fps", "demo", "audio",
-                       "mulprobe", "reconfig"):
+                       "mulprobe", "reconfig", "hstxbench", "hstxdemo"):
         bridge = Bridge(find_port(a.port))
         try:
             vdp = Vdp(bridge)
-            if a.command == "selftest":
+            if a.link == "hstx" or a.command in ("hstxbench", "hstxdemo"):
+                global GPU_LINK
+                r = bridge.command("hstx " + HSTX_SPEEDS[a.hstx])
+                if not r.get("ok"):
+                    raise HarnessError(r.get("error", "hstx failed"))
+                GPU_LINK = a.link
+            if a.command == "hstxbench":
+                result = hstxbench(bridge, a.words, a.reps)
+            elif a.command == "hstxdemo":
+                if len(a.args) != 1:
+                    ap.error("hstxdemo <logo|tunnel|room|city> [--frames K] [--reps R]")
+                result = hstxdemo(bridge, a.args[0], a.frames if a.frames != 120 else 10, a.reps)
+            elif a.command == "selftest":
                 result = selftest(bridge, a.iterations)
             elif a.command == "fps":
                 if len(a.args) != 1:

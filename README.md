@@ -26,12 +26,13 @@ The documents under `docs/` are written in Japanese.
 - **VDP**: the command GPU (stages M0–M9), the emulator-oriented tile / sprite engine and Mode 7 (E1–E4, E7), and the 8bpp plane, BLIT4,
   STRETCH_BLIT, light map and audio for running [rs-kessel](https://github.com/fpt/rs-kessel) (K1–K5a) all work on hardware
 - **3D GPU**: stages G0–G5. The four scenes above (logo, tunnel, room with a reflective ball, city at night) take 290K–960K clocks per frame on the GPU alone
-  (a 60Hz frame is 1,050K), so all of them fit in 60fps. On hardware the link (below) is the bottleneck, giving 30–50fps
+  (a 60Hz frame is 1,050K). Fed over HSTX from the Pico's RAM, logo, tunnel and room run at 60fps and city at 46fps (GPU-bound);
+  sent from the PC over USB + SPI they run at 30–50fps
 - **Bitstream switching**: works with flash multiboot (VDP at 0x000000, 3D GPU at 0x100000) and RECONFIG_N (pin 9). The harness switches to the bitstream it needs
   on its own
-- **Host link**: currently the development harness over SPI 8MHz (about 764KB/s). The default is harness v2 (Pico 2, [docs/HARNESS2.md](docs/HARNESS2.md));
-  the older harness v1 (RP2040-Zero, [docs/HARNESS.md](docs/HARNESS.md)) still works with `export HARNESS=v1`. The production link will be the RP2350's HSTX
-  (about 37MB/s expected), which harness v2 already has the wires for; the HSTX receiver isn't written yet. The production RP2350 firmware (`firmware/`) is still a skeleton
+- **Host link**: harness v2 (Pico 2, [docs/HARNESS2.md](docs/HARNESS2.md), the default) has SPI 7.5MHz (about 756KB/s) and the RP2350's **HSTX at 36.9MB/s**
+  (measured; the production link). Commands from the PC still pass through USB (about 900KB/s), so HSTX pays off when the RP2350 produces the commands.
+  The older harness v1 (RP2040-Zero, [docs/HARNESS.md](docs/HARNESS.md), SPI only) still works with `export HARNESS=v1`. The production RP2350 firmware (`firmware/`) is still a skeleton
 - The stage names (M / E / K / G) are listed in the stage table of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Documents

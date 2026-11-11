@@ -129,6 +129,7 @@ module gpu_scenario_tb #(
     logic [8:0]  p_len;
 
     gpu #(.GPU3D(GPU3D)) u_gpu (
+        .ext_valid(1'b0), .ext_word(32'h0), .ext_ready(),
         .clk(clk_sys), .rst, .addr, .wdata, .we, .re, .rdata,
         .mem_req(g_req), .mem_we(g_we), .mem_addr(g_addr), .mem_wdata(g_wdata), .mem_wmask(g_wmask),
         .mem_len(g_len), .mem_ack(g_ack), .mem_wnext(g_wnext), .mem_rvalid(g_rvalid), .mem_rdata(m_rdata),
