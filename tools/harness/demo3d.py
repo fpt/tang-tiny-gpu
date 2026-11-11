@@ -1,7 +1,8 @@
 """G5 の 3D の場面 (docs/ARCHITECTURE.md の段階 G5)。Final Reality 風に、ロゴ・トンネル・映り込む玉のある部屋・夜の街
 
 ホストの仕事 (PS1 の CPU + GTE がやっていたこと) を Python で: 頂点の変換、視錐台とガードバンドで切る (クリップ)、裏面を捨てる、
-テクスチャの三角形を細かく割る (SUBDIV、既定は割らない。python3 demo3d.py compare <場面> <フレーム> <png> で割る前と後を並べる)、
+テクスチャの三角形を細かく割る (SUBDIV)、三角形ごとにミップマップの段を選ぶ (MIP)。どちらも既定は使わない
+(python3 demo3d.py compare <場面> <フレーム> <png> [subdiv|mip|subdiv+mip] で使う前と後を並べる)、
 頂点の明るさ (平行光 + 環境光、霧)、環境マップ (視点から見た法線で uv を作る)、奥から手前への並べ替え。
 GPU (3D GPU のビットストリーム、make bitstream-gpu3d) には画面の座標の TRI (raster.py の規則) を送るだけ。
 
@@ -32,8 +33,18 @@ TEX_BASE = 0xA0000                      # テクスチャ VRAM (SDRAM のバイ�
 TEX = {"stone": 0, "env": 1, "floor": 2, "wall": 3, "window": 4, "ground": 5, "gold": 6}
 
 
-def tex_base(name):
-    return TEX_BASE + 2048 * TEX[name]
+def tex_base(name, level=0):
+    """テクスチャの先頭。ミップマップの段 1〜3 (32 / 16 / 8 テクセル四方) は、元の 7 つのうしろの 2,048 ワードの区画に 0 / 512 / 640 ワード目から置く
+    (どれも自分のワード数 512 / 128 / 32 の倍数)"""
+    if level == 0:
+        return TEX_BASE + 2048 * TEX[name]
+    return TEX_BASE + 2048 * (8 + TEX[name]) + (0, 0, 512, 640)[level]
+
+
+# ミップマップ (三角形ごとに段を選ぶ)。None なら使わない。三角形のテクスチャの面積 (段 0 のテクセル) と画面の面積 (ピクセル) の比から、
+# 段 = floor(log2(1 ピクセルあたりのテクセルの辺の長さ) + bias) を 0..levels に収める。段 L は uv を 1/2^L にして 64 >> L 四方のテクスチャを使う
+MIP = None
+MIP_DEFAULT = {"bias": 0.0, "levels": 3}
 
 
 # ---- ベクトル ----
@@ -186,9 +197,6 @@ class Frame:
             return
         if key is None:
             key = sum(v[2] for v, _ in clipped) / len(clipped)
-        set_tex = []
-        if tex:
-            set_tex = g.encode({"op": "set_tex", "base": tex_base(tex), "fmt": "16", "w": 64, "h": 64})
         tris = [(clipped[0], clipped[i], clipped[i + 1]) for i in range(1, len(clipped) - 1)]
         if SUBDIV and uvs:
             tris = [t for tri in tris for t in self._subdiv(tri, (0, 0, 0), SUBDIV)]
@@ -201,17 +209,38 @@ class Frame:
                 step["color"] = flat
             else:
                 step["rgb"] = ["#%02x%02x%02x" % tuple(max(0, min(255, int(c))) for c in clipped[j][1][:3]) for j in idx]
+            set_tex = []
             if uvs:
                 us = [clipped[j][1][3] for j in idx]
                 vv = [clipped[j][1][4] for j in idx]
-                du, dv = 64 * math.floor(min(us) / 64), 64 * math.floor(min(vv) / 64)
+                level = self._mip_level(scr, us, vv) if (MIP and tex) else 0
+                size = 64 >> level
+                us = [u / (1 << level) for u in us]
+                vv = [v / (1 << level) for v in vv]
+                du, dv = size * math.floor(min(us) / size), size * math.floor(min(vv) / size)
                 step["uv"] = [[min(1023.9, max(0.0, us[k] - du)), min(1023.9, max(0.0, vv[k] - dv))] for k in range(3)]
+                if tex:
+                    set_tex = g.encode({"op": "set_tex", "base": tex_base(tex, level), "fmt": "16", "w": size, "h": size})
             if zbuf:
                 step["z"] = [zval(clipped[j][0][2]) for j in idx]
             if blend:
                 step["blend"] = blend
             self.items.append((key, self.n, tuple(set_tex), g.tri_words(step)))
             self.n += 1
+
+    @staticmethod
+    def _mip_level(scr, us, vv):
+        """三角形の画面の面積 (ピクセル) とテクスチャの面積 (段 0 のテクセル) から段を選ぶ"""
+        def area(x, y):
+            return abs((x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0])) / 2
+        a_scr = area([p[0] for p in scr], [p[1] for p in scr])
+        a_tex = area(us, vv)
+        if a_tex <= 0:
+            return 0
+        if a_scr < 1e-6:
+            return MIP["levels"]
+        lv = math.floor(0.5 * math.log2(a_tex / a_scr) + MIP["bias"])
+        return max(0, min(MIP["levels"], lv))
 
     def _edge_split(self, a, b, level, cfg):
         """辺 a-b を割るか (辺の両端だけで決まる)"""
@@ -359,14 +388,40 @@ def tex_pixel(name, u, v):
     raise ValueError(name)
 
 
+def _from565(c):
+    return ((c >> 11) & 31) * 255 / 31, ((c >> 5) & 63) * 255 / 63, (c & 31) * 255 / 31
+
+
+def tex_levels(name):
+    """段 0〜3 のテクセル (RGB565 の行の列)。段 L+1 は段 L の 2 x 2 の平均"""
+    lv = [[[tex_pixel(name, u, v) for u in range(64)] for v in range(64)]]
+    for _ in range(3):
+        prev = lv[-1]
+        n = len(prev) // 2
+        img = []
+        for v in range(n):
+            row = []
+            for u in range(n):
+                cs = [_from565(prev[2 * v + dv][2 * u + du]) for dv in (0, 1) for du in (0, 1)]
+                row.append(_rgb(*(sum(c[i] for c in cs) / 4 for i in range(3))))
+            img.append(row)
+        lv.append(img)
+    return lv
+
+
 def tex_upload(name):
-    """64 x 64 の 16bpp を raster.py の並び (4 x 4 テクセルのかたまり) で"""
+    """64 x 64 の 16bpp と、ミップマップの段 1〜3 を raster.py の並び (4 x 4 テクセルのかたまり) で"""
     import raster
-    words = [0] * 2048
-    for v in range(64):
-        for u in range(0, 64, 2):
-            words[raster.tex_index(0, 6, u, v)] = tex_pixel(name, u, v) | tex_pixel(name, u + 1, v) << 16
-    return [g.OP_UPLOAD << 24 | len(words), tex_base(name)] + words
+    out = []
+    for level, img in enumerate(tex_levels(name)):
+        n = len(img)
+        wl = n.bit_length() - 1
+        words = [0] * (n * n // 2)
+        for v in range(n):
+            for u in range(0, n, 2):
+                words[raster.tex_index(0, wl, u, v)] = img[v][u] | img[v][u + 1] << 16
+        out += [g.OP_UPLOAD << 24 | len(words), tex_base(name, level)] + words
+    return out
 
 
 # ---- 形 ----
@@ -707,21 +762,24 @@ def _render(scene, k):
 
 
 def main(argv):
-    """python3 demo3d.py compare <scene> <frame> <out.png>: 割らない (左) と割る (右、SUBDIV_DEFAULT) を参照モデルで描いて並べる"""
+    """python3 demo3d.py compare <scene> <frame> <out.png> [mode]: どちらも使わない (左) と mode (右) を参照モデルで描いて並べる。
+    mode は subdiv (既定)、mip、subdiv+mip (SUBDIV_DEFAULT / MIP_DEFAULT)"""
     import fbmodel
     import imgcmp
-    if len(argv) != 4 or argv[0] != "compare":
-        print("usage: demo3d.py compare <logo|tunnel|room|city> <frame> <out.png>")
+    if len(argv) not in (4, 5) or argv[0] != "compare":
+        print("usage: demo3d.py compare <logo|tunnel|room|city> <frame> <out.png> [subdiv|mip|subdiv+mip]")
         return 2
-    global SUBDIV
+    global SUBDIV, MIP
     scene, k, out = argv[1], int(argv[2]), argv[3]
+    mode = argv[4] if len(argv) == 5 else "subdiv"
     imgs = []
-    for sd in (None, dict(SUBDIV_DEFAULT)):
-        SUBDIV = sd
+    for on in (False, True):
+        SUBDIV = dict(SUBDIV_DEFAULT) if on and "subdiv" in mode else None
+        MIP = dict(MIP_DEFAULT) if on and "mip" in mode else None
         img, n = _render(scene, k)
         imgs.append(fbmodel.expected_output(img))
-        print(f"{scene} frame {k} subdiv={'on' if sd else 'off'}: {n} words")
-    SUBDIV = None
+        print(f"{scene} frame {k} {mode if on else 'off'}: {n} words")
+    SUBDIV = MIP = None
     w2, h2 = 2 * W, 2 * H
     side = b"".join(imgs[0][y * w2 * 3:(y + 1) * w2 * 3] + imgs[1][y * w2 * 3:(y + 1) * w2 * 3] for y in range(h2))
     imgcmp.write_png(out, 2 * w2, h2, side)
