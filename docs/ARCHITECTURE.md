@@ -199,6 +199,9 @@ CLAUDE.md の RTL の方針の根拠です。どれも Verilator では合い、
 - **yosys は組み合わせで読む小さい配列を BSRAM にし、番地の FF を取り込んで FF の D 入力 (論理) を番地にすることがある**。RTL を見ても分からないので
   `bsram_check.py` が合成したネットリストで確かめる (3D GPU は違反なら止まる)。小さい配列で困るなら `(* ram_style = "logic" *)`
 - **yosys の `$buf`**: 合成のあとに残る `$buf` セルを `scripts/fix_netlist.py` が外す (E4 と K3 で出た)
+- **立ち下がりで動く FF の非同期クリア (`DFFNC` / `DFFNCE`) で、書き込みのポインタが進まなかった** (HSTX の受信、止まることのある外のクロックの立ち下がり)。
+  非同期のリセットを外したら動いた。クロックをまたぐ FIFO のポインタはリセットしない (コンフィグで 0 から始まり、両側が回り続ける)
+- **データの入力として使う GCLKT のピン** (80) は、値が常に High に見えた (専用の配線が失敗し、一般の配線になる)。クロックとして受ければ届く (HARNESS2.md の 2.4)
 - 配置の種 (`nextpnr --seed`) を変えて実機の結果が変わるなら、上のどれかを疑う
 
 ## 11. ホストとのリンク
@@ -206,14 +209,16 @@ CLAUDE.md の RTL の方針の根拠です。どれも Verilator では合い、
 | リンク | 速さ | 状態 |
 | --- | --- | --- |
 | SPI 8MHz (ハーネス v1、RP2040-Zero のブリッジ v3 の `stream`) | 約 764KB/s | 動いている |
-| SPI (ハーネス v2、Pico 2) + IRQ / READY、VSYNC (HDMI の DDC_CLK、ピン 52) | — | 基板を作っているところ ([HARNESS2.md](HARNESS2.md)) |
-| HSTX のデータ 4 本 + CLK (37.5MHz DDR) | 約 37MB/s (1 フレーム 620KiB) | 本番の予定 |
+| SPI 7.5MHz (ハーネス v2、Pico 2、`stream`) | 約 756KB/s | 動いている (既定) |
+| HSTX のデータ 4 本 + CLK (ハーネス v2、clk_hstx 75MHz、クロック 37.5MHz で DDR) | **36.9MB/s** (実測。1 フレーム 620KiB) | 動いている ([HARNESS2.md](HARNESS2.md) の 3 章) |
 
 - FPGA は SCK を `clk_sys` (63MHz) でサンプリングするので、SPI の上限は 10〜15MHz
-- **HSTX の予定**: パケット = マジック (32bit) + 長さ + ペイロード (コマンド FIFO に入れる 32bit ワードの列) + CRC16。受信側はニブル単位でマジックを探して同期し、
-  CRC が合わないパケットは捨ててエラーを数える (再送はしない)。HSTX は送信専用なので、戻りは READY (GPIO) とステータス
+- **HSTX**: パケット = マジック (32bit) + 長さ + ワードの列 (コマンド FIFO に入れる) + CRC16 ([`hstx_rx.sv`](../rtl/vdp/hstx_rx.sv))。
+  受信側はバイトでマジックを探して同期する。ワードは CRC を見る前に FIFO に入れ、CRC の不一致は数えるだけ (再送はしない)。
+  HSTX は送信専用なので、ホストは SPI で `GPU_FREE` を読んで空きを確かめてから送る
 - **ホストの分け方**: 翻訳層 (エミュレータの VDP や Kessel のスクリーン → コマンド) とトランスポート (SPI / HSTX) の間は「32bit ワードを積む / フラッシュする / READY を待つ」だけ
-- 今の 3D の場面はリンクが律速 (GPU だけなら 60fps に間に合う。SPECIFICATION_3D.md の「速さ」)
+- ホストの PC から USB で送る今のハーネスでは、USB (フルスピード、約 900KB/s) が律速。HSTX の速さが効くのは、RP2350 がコマンドを作るとき
+  (本番) と、Pico の RAM に置いたものを流すとき (`harness.py hstxbench` / `hstxdemo`)
 
 ## 12. 段階の記録
 
