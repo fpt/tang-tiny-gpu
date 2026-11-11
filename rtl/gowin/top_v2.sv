@@ -1,7 +1,7 @@
 // Tang Nano 20K トップ (ハーネス v2: Pico 2、docs/HARNESS2.md、harness/kicad/v2/pins_v2.json)
-//   中身は top.sv と同じ。ピンだけ v2 に合わせる: SPI は 20 / 19 / 75 / 86、IRQ は 85、VSYNC は 52、RESET は 79。
-//   v2 にない線 (HEARTBEAT、ERROR) と、SPI に使う LED4 / LED5 (19 / 20) はピンに出さない (top の出力を中でつながない)。
-//   LED0〜3 (15〜18) は動作確認用に残す。HSTX (71〜74、80) はまだ受けない (入力にもしない)
+//   中身は top_core.sv。ピンを v2 に合わせる: SPI は 20 / 19 / 75 / 86、IRQ は 85、VSYNC は 52、RESET は 79、HSTX は 71〜74 と 80 (クロック)。
+//   v2 にない線 (HEARTBEAT、ERROR) と、SPI に使う LED4 / LED5 (19 / 20) はピンに出さない (top_core の出力を中でつながない)。
+//   LED0〜3 (15〜18) は動作確認用に残す
 module top_v2 #(
     parameter int GPU3D = 0,
     parameter int MUL_PROBE = 0
@@ -23,6 +23,8 @@ module top_v2 #(
     output logic       vdp_irq,
     output logic       vsync_out,
     output logic       reconfig_n,
+    input  logic       hstx_clk,     // 80 (GCLKT_0)
+    input  logic [3:0] hstx_d,       // 71〜74
     // パッケージ内 SDRAM
     output logic        O_sdram_clk,
     output logic        O_sdram_cke,
@@ -42,11 +44,11 @@ module top_v2 #(
 );
     logic [5:0] led_all;
 
-    top #(.GPU3D(GPU3D), .MUL_PROBE(MUL_PROBE)) u_top (
+    top_core #(.GPU3D(GPU3D), .MUL_PROBE(MUL_PROBE), .HSTX(1)) u_top (
         .clk, .btn_s1, .btn_s2, .led(led_all),
         .tmds_clk_p, .tmds_clk_n, .tmds_d_p, .tmds_d_n,
         .spi_sck, .spi_copi, .spi_cs, .rst_in, .spi_cipo, .vdp_irq, .vsync_out,
-        .heartbeat(), .error_out(), .reconfig_n,
+        .heartbeat(), .error_out(), .reconfig_n, .hstx_clk, .hstx_d,
         .O_sdram_clk, .O_sdram_cke, .O_sdram_cs_n, .O_sdram_ras_n, .O_sdram_cas_n, .O_sdram_wen_n,
         .O_sdram_ba, .O_sdram_addr, .O_sdram_dqm, .IO_sdram_dq,
         .hp_bck, .hp_ws, .hp_din, .pa_en

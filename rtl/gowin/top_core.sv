@@ -1,4 +1,4 @@
-// Tang Nano 20K トップ
+// Tang Nano 20K の中身 (ピンはラッパーが決める: top.sv はハーネス v1、top_v2.sv はハーネス v2)
 //   27MHz -> rPLL 126MHz (シリアル) -> CLKDIV /5 -> 25.2MHz (ピクセル)
 //   27MHz -> 2 つ目の rPLL 63MHz (システム: SPI スレーブ・レジスタ・SDRAM)
 //                              + CLKOUTP (同じ 63MHz を位相だけずらしたもの) -> SDRAM のクロック
@@ -8,9 +8,11 @@
 //   GPU3D = 1 (make bitstream-gpu3d): VDP を外した 3D GPU のビットストリーム (docs/ARCHITECTURE.md の 8 章)。line_compositor の代わりに
 //   fb_line (ビットマップ RGB565 + 背景色・透過色だけ) で表示し、音はない (アンプは切る)。0x50..0x5F は MUL_PROBE なら mul_probe (DSP の確かめ)。
 //   VERSION の bit7 が 1 になる
-module top #(
+//   HSTX = 1 (ハーネス v2): RP2350 の HSTX (hstx_clk、hstx_d) からコマンドを受ける (rtl/vdp/hstx_rx.sv)。状態は 0x60..0x67
+module top_core #(
     parameter int GPU3D = 0,
-    parameter int MUL_PROBE = 0          // 3D GPU で 0x50 に mul_probe (DSP の確かめ、G0) を入れる (make bitstream-gpu3d MUL_PROBE=1)
+    parameter int MUL_PROBE = 0,         // 3D GPU で 0x50 に mul_probe (DSP の確かめ、G0) を入れる (make bitstream-gpu3d MUL_PROBE=1)
+    parameter int HSTX = 0
 ) (
     input  logic       clk,          // 27MHz
     input  logic       btn_s1,       // リセット (押下で 1)
@@ -31,6 +33,9 @@ module top #(
     output logic       heartbeat,
     output logic       error_out,
     output logic       reconfig_n,   // RECONFIG_N (ピン 9)。Low で再コンフィグ (--reconfign_as_gpio は付けない)
+    // HSTX (HSTX = 1 のとき。hstx_clk はクロックとして受ける: データの入力としては値が届かない、docs/HARNESS2.md の 2.4)
+    input  logic       hstx_clk,
+    input  logic [3:0] hstx_d,
     // パッケージ内 SDRAM
     output logic        O_sdram_clk,
     output logic        O_sdram_cke,
@@ -179,13 +184,14 @@ module top #(
     assign vdp_irq = control[4] ? gpu_ready : irq_vblank;
 
     // 0x10..0x2F は SDRAM のテスト (mem_test)、0x30..0x4F は GPU、それ以外は vdp_regs
-    // 0x50..0x5F は音 (audio_out、読み出しだけ)
-    logic sel_mem, sel_gpu, sel_audio;
-    logic [7:0] audio_rdata;
+    // 0x50..0x5F は音 (audio_out、読み出しだけ)、0x60..0x6F は HSTX の受信の状態 (HSTX = 1 のとき)
+    logic sel_mem, sel_gpu, sel_audio, sel_hstx;
+    logic [7:0] audio_rdata, hstx_rdata;
     assign sel_mem   = reg_addr >= 7'h10 && reg_addr <= 7'h2F;
     assign sel_gpu   = reg_addr >= 7'h30 && reg_addr <= 7'h4F;
     assign sel_audio = reg_addr >= 7'h50 && reg_addr <= 7'h5F;
-    assign reg_rdata = sel_mem ? mem_rdata : sel_gpu ? gpu_rdata : sel_audio ? audio_rdata : vdp_rdata;
+    assign sel_hstx  = HSTX != 0 && reg_addr >= 7'h60 && reg_addr <= 7'h6F;
+    assign reg_rdata = sel_mem ? mem_rdata : sel_gpu ? gpu_rdata : sel_audio ? audio_rdata : sel_hstx ? hstx_rdata : vdp_rdata;
 
     spi_slave u_spi (
         .clk(clk_sys), .rst(rst_sys),
@@ -197,7 +203,8 @@ module top #(
     logic reconfig_req;                  // vdp_regs の RECONFIG (下で RECONFIG_N を Low にする)
     vdp_regs #(.VERSION(GPU3D != 0 ? 8'h81 : 8'h01)) u_regs (
         .clk(clk_sys), .rst(rst_sys),
-        .addr(reg_addr), .wdata(reg_wdata), .we(reg_we && !sel_mem && !sel_gpu && !sel_audio), .re(reg_re && !sel_mem && !sel_gpu && !sel_audio),
+        .addr(reg_addr), .wdata(reg_wdata), .we(reg_we && !sel_mem && !sel_gpu && !sel_audio && !sel_hstx),
+        .re(reg_re && !sel_mem && !sel_gpu && !sel_audio && !sel_hstx),
         .rdata(vdp_rdata),
         .vblank_async(vblank), .frame_toggle_async(heartbeat),
         .crc_async(frame_crc_value), .crc_frame_async(frame_crc_frame), .crc_toggle_async(frame_crc_toggle),
@@ -307,8 +314,46 @@ module top #(
     logic [8:0]  clip_x0, clip_x1;
     logic [7:0]  clip_y0, clip_y1;
 
+    // --- HSTX の受信 (ハーネス v2) ---
+    // 0x60 PKTS (CRC が合ったパケット)、0x61 CRC_ERR、0x62 SYNC_ERR、0x63 DROPS (あふれて捨てたバイト)、0x64..0x67 BYTES (受け取ったワードのバイト数)。
+    // 0x68 / 0x69 は確かめ用 (バイトの FIFO のポインタ)。0x60 に書くと数はどれも 0 に戻り、パケットの解析もやり直す
+    logic        hx_valid, hx_ready;
+    logic [31:0] hx_word;
+    if (HSTX != 0) begin : g_hstx
+        logic [7:0]  hx_pkts, hx_crc_errs, hx_sync_errs, hx_drops;
+        logic [31:0] hx_bytes;
+        logic [7:0]  hx_wptr, hx_rptr;
+        hstx_rx u_hstx (
+            .hclk(hstx_clk), .hd(hstx_d), .clk(clk_sys), .rst(rst_sys),
+            .word_valid(hx_valid), .word(hx_word), .word_ready(hx_ready),
+            .stat_clear(reg_we && reg_addr == 7'h60),
+            .pkts(hx_pkts), .crc_errs(hx_crc_errs), .sync_errs(hx_sync_errs), .drops(hx_drops), .bytes(hx_bytes),
+            .dbg_wptr(hx_wptr), .dbg_rptr(hx_rptr)
+        );
+        always_comb begin
+            case (reg_addr[3:0])
+                4'h0:    hstx_rdata = hx_pkts;
+                4'h1:    hstx_rdata = hx_crc_errs;
+                4'h2:    hstx_rdata = hx_sync_errs;
+                4'h3:    hstx_rdata = hx_drops;
+                4'h4:    hstx_rdata = hx_bytes[7:0];
+                4'h5:    hstx_rdata = hx_bytes[15:8];
+                4'h6:    hstx_rdata = hx_bytes[23:16];
+                4'h7:    hstx_rdata = hx_bytes[31:24];
+                4'h8:    hstx_rdata = hx_wptr;       // 確かめ用: バイトの FIFO の書き込みのポインタ (グレイコード)
+                4'h9:    hstx_rdata = hx_rptr;       // 確かめ用: 読み出しのポインタ
+                default: hstx_rdata = 8'h00;
+            endcase
+        end
+    end else begin : g_no_hstx
+        assign hx_valid   = 1'b0;
+        assign hx_word    = 32'h0;
+        assign hstx_rdata = 8'h00;
+    end
+
     gpu #(.GPU3D(GPU3D)) u_gpu (
         .clk(clk_sys), .rst(rst_sys),
+        .ext_valid(hx_valid), .ext_word(hx_word), .ext_ready(hx_ready),
         .addr(reg_addr), .wdata(reg_wdata), .we(reg_we && sel_gpu), .re(reg_re && sel_gpu), .rdata(gpu_rdata),
         .mem_req(g_req), .mem_we(g_we), .mem_addr(g_addr), .mem_wdata(g_wdata), .mem_wmask(g_wmask),
         .mem_len(g_len), .mem_ack(g_ack), .mem_wnext(g_wnext), .mem_rvalid(g_rvalid), .mem_rdata(mem_rdata32),
