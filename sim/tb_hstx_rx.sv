@@ -18,7 +18,7 @@ module tb_hstx_rx;
 
     hstx_rx dut (
         .hclk, .hd, .clk, .rst, .word_valid, .word, .word_ready,
-        .stat_clear, .pkts, .crc_errs, .sync_errs, .drops, .bytes
+        .stat_clear, .pkts, .crc_errs, .sync_errs, .drops, .bytes, .dbg_wptr(), .dbg_rptr()
     );
 
     // 受け取ったワード
@@ -72,7 +72,6 @@ module tb_hstx_rx;
             end
         if (bad_crc) crc = crc ^ 16'h0001;
         send_byte(crc[7:0]); send_byte(crc[15:8]);
-        send_byte(8'h00); send_byte(8'h00);
         #(half_ns * 3);                   // クロックを止める
     endtask
 
@@ -170,6 +169,20 @@ module tb_hstx_rx;
         @(posedge clk) stat_clear = 1'b0;
         @(posedge clk);
         check("stat clear", pkts == 0 && crc_errs == 0 && sync_errs == 0 && bytes == 0);
+
+        // 7. パケットの途中でクリアしたら、次のパケットから受け直す (長さ 1000 の頭だけ送ってやめる)
+        half_ns = 53.0;
+        send_byte(8'h55); send_byte(8'hAA); send_byte(8'h5A); send_byte(8'hA5); send_byte(8'hE8); send_byte(8'h03);
+        send_byte(8'h11); send_byte(8'h22);
+        repeat (20) @(posedge clk);
+        @(posedge clk) stat_clear = 1'b1;
+        @(posedge clk) stat_clear = 1'b0;
+        n_got = 0;
+        expect_n = 0;
+        queue_packet(4, 6);
+        send_packet(4, 1'b0);
+        wait_words(4);
+        check("resync after clear", pkts == 8'd1 && n_got == 4 && got[0] == expect_w[0] && got[3] == expect_w[3]);
 
         if (errors == 0) $display("PASS: tb_hstx_rx (%0d words, %0d packets)", n_got, 5);
         else             $display("FAIL: tb_hstx_rx (%0d errors)", errors);
