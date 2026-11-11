@@ -1,6 +1,7 @@
 """G5 の 3D の場面 (docs/ARCHITECTURE.md の段階 G5)。Final Reality 風に、ロゴ・トンネル・映り込む玉のある部屋・夜の街
 
 ホストの仕事 (PS1 の CPU + GTE がやっていたこと) を Python で: 頂点の変換、視錐台とガードバンドで切る (クリップ)、裏面を捨てる、
+テクスチャの三角形を細かく割る (SUBDIV、既定は割らない。python3 demo3d.py compare <場面> <フレーム> <png> で割る前と後を並べる)、
 頂点の明るさ (平行光 + 環境光、霧)、環境マップ (視点から見た法線で uv を作る)、奥から手前への並べ替え。
 GPU (3D GPU のビットストリーム、make bitstream-gpu3d) には画面の座標の TRI (raster.py の規則) を送るだけ。
 
@@ -143,6 +144,14 @@ def _clip(poly, planes):
     return poly
 
 
+# 三角形をホストで細かく割る (PS1 と同じやり方で、アフィンのテクスチャの歪みを小さくする)。None なら割らない。
+# 辺ごとに決める: 画面の長さ L、両端の奥行き za, zb の辺は、中点でアフィンと遠近補正のずれが約 L |za - zb| / (2 (za + zb)) ピクセル。
+# これが err を越え、辺の段 (何回割った辺か) が levels 未満なら中点で割る。辺だけで決まるので、となりの三角形とも同じに割れ、
+# T 字の継ぎ目 (すき間) ができない。テクスチャのある面だけ割る
+SUBDIV = None
+SUBDIV_DEFAULT = {"err": 1.0, "levels": 3}
+
+
 def zval(z):
     """視点の z → Z バッファの値 (1/z に比例するので画面で線形に補間してよい)"""
     v = (1.0 - NEAR / z) * FAR / (FAR - NEAR)
@@ -180,8 +189,13 @@ class Frame:
         set_tex = []
         if tex:
             set_tex = g.encode({"op": "set_tex", "base": tex_base(tex), "fmt": "16", "w": 64, "h": 64})
-        for i in range(1, len(clipped) - 1):
-            idx = (0, i, i + 1)
+        tris = [(clipped[0], clipped[i], clipped[i + 1]) for i in range(1, len(clipped) - 1)]
+        if SUBDIV and uvs:
+            tris = [t for tri in tris for t in self._subdiv(tri, (0, 0, 0), SUBDIV)]
+        for tv in tris:
+            scr = [(CX + cam.f * v[0] / v[2], CY - cam.f * v[1] / v[2]) for v, _ in tv]
+            clipped = tv
+            idx = (0, 1, 2)
             step = {"op": "tri", "v": [[round(scr[j][0], 2), round(scr[j][1], 2)] for j in idx]}
             if flat is not None:
                 step["color"] = flat
@@ -198,6 +212,54 @@ class Frame:
                 step["blend"] = blend
             self.items.append((key, self.n, tuple(set_tex), g.tri_words(step)))
             self.n += 1
+
+    def _edge_split(self, a, b, level, cfg):
+        """辺 a-b を割るか (辺の両端だけで決まる)"""
+        if level >= cfg["levels"]:
+            return False
+        f = self.cam.f
+        (pa, _), (pb, _) = a, b
+        dx = f * (pa[0] / pa[2] - pb[0] / pb[2])
+        dy = f * (pa[1] / pa[2] - pb[1] / pb[2])
+        length = math.hypot(dx, dy)
+        return length * abs(pa[2] - pb[2]) / (2 * (pa[2] + pb[2])) > cfg["err"]
+
+    def _subdiv(self, tri, levels, cfg):
+        """三角形 (頂点は (視点の座標, 属性)) を割る。levels は辺 (v0-v1, v1-v2, v2-v0) の段。割った三角形の列を返す"""
+        def mid(a, b):
+            return (tuple((x + y) * 0.5 for x, y in zip(a[0], b[0])), tuple((x + y) * 0.5 for x, y in zip(a[1], b[1])))
+
+        v = list(tri)
+        split = [self._edge_split(v[i], v[(i + 1) % 3], levels[i], cfg) for i in range(3)]
+        n = sum(split)
+        if n == 0:
+            return [tri]
+        m = [mid(v[i], v[(i + 1) % 3]) if split[i] else None for i in range(3)]
+        sub = [lv + 1 for lv in levels]          # 割った辺の半分の段
+        inner = max(levels) + 1                  # 中にできた辺の段 (同じ三角形の中で両側が同じ値を使う)
+        out = []
+        if n == 3:
+            parts = [((v[0], m[0], m[2]), (sub[0], inner, sub[2])),
+                     ((m[0], v[1], m[1]), (sub[0], sub[1], inner)),
+                     ((m[2], m[1], v[2]), (inner, sub[1], sub[2])),
+                     ((m[0], m[1], m[2]), (inner, inner, inner))]
+        else:
+            # 割る辺が 1 本か 2 本: 回して、割る辺が v0-v1 (と v1-v2) になるようにする
+            r = next(i for i in range(3) if split[i] and (n == 1 or split[(i + 1) % 3]))
+            v = v[r:] + v[:r]
+            m = m[r:] + m[:r]
+            lv = levels[r:] + levels[:r]
+            s_ = [x + 1 for x in lv]
+            if n == 1:
+                parts = [((v[0], m[0], v[2]), (s_[0], inner, lv[2])),
+                         ((m[0], v[1], v[2]), (s_[0], lv[1], inner))]
+            else:
+                parts = [((m[0], v[1], m[1]), (s_[0], s_[1], inner)),
+                         ((v[0], m[0], m[1]), (s_[0], inner, inner)),
+                         ((v[0], m[1], v[2]), (inner, s_[1], lv[2]))]
+        for t, lvs in parts:
+            out += self._subdiv(t, lvs, cfg)
+        return out
 
     def words(self, sort=True):
         items = sorted(self.items, key=lambda it: (-it[0], it[1])) if sort else self.items
@@ -634,3 +696,38 @@ def frame_words(scene, k):
     words += SCENES[scene](k)
     words += g.encode({"op": "end_scene"}) + g.encode({"op": "swap"})
     return words
+
+
+def _render(scene, k):
+    """参照モデルで場面のフレーム k を描き、表示される 320x240 の RGB565 と、TRI の数・ワード数を返す"""
+    words = frame_words(scene, k)
+    m = g.Model()
+    m.run(g.layer_reset_words() + setup_words(scene) + words)
+    return m.displayed565(), len(words)
+
+
+def main(argv):
+    """python3 demo3d.py compare <scene> <frame> <out.png>: 割らない (左) と割る (右、SUBDIV_DEFAULT) を参照モデルで描いて並べる"""
+    import fbmodel
+    import imgcmp
+    if len(argv) != 4 or argv[0] != "compare":
+        print("usage: demo3d.py compare <logo|tunnel|room|city> <frame> <out.png>")
+        return 2
+    global SUBDIV
+    scene, k, out = argv[1], int(argv[2]), argv[3]
+    imgs = []
+    for sd in (None, dict(SUBDIV_DEFAULT)):
+        SUBDIV = sd
+        img, n = _render(scene, k)
+        imgs.append(fbmodel.expected_output(img))
+        print(f"{scene} frame {k} subdiv={'on' if sd else 'off'}: {n} words")
+    SUBDIV = None
+    w2, h2 = 2 * W, 2 * H
+    side = b"".join(imgs[0][y * w2 * 3:(y + 1) * w2 * 3] + imgs[1][y * w2 * 3:(y + 1) * w2 * 3] for y in range(h2))
+    imgcmp.write_png(out, 2 * w2, h2, side)
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,96 @@
+{
+ "name": "g6_subdiv",
+ "description": "G5 の場面の三角形をホストで割ったもの (demo3d.SUBDIV、誤差 2 ピクセル・3 段)。テクスチャの面を辺の中点で割り、アフィンの歪みを小さくする (PS1 と同じ)。1 フレーム約 7,000〜20,000 ワード",
+ "steps": [
+  {
+   "op": "demo3d_setup",
+   "scene": "tunnel"
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "tunnel",
+   "frame": 60,
+   "subdiv": [
+    2,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "tunnel",
+   "frame": 300,
+   "subdiv": [
+    2,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_setup",
+   "scene": "room"
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "room",
+   "frame": 60,
+   "subdiv": [
+    2,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "room",
+   "frame": 200,
+   "subdiv": [
+    2,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_setup",
+   "scene": "city"
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "city",
+   "frame": 60,
+   "subdiv": [
+    2,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "city",
+   "frame": 300,
+   "subdiv": [
+    2,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  }
+ ]
+}
