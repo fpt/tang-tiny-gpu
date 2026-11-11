@@ -1,0 +1,87 @@
+{
+ "name": "g7_mip",
+ "description": "G5 の場面にミップマップ (demo3d.MIP): 64 x 64 のテクスチャに 32 / 16 / 8 の段を置き、三角形ごとにテクスチャと画面の面積の比で段を選ぶ。最後は三角形を割るのと一緒に",
+ "steps": [
+  {
+   "op": "demo3d_setup",
+   "scene": "tunnel"
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "tunnel",
+   "frame": 300,
+   "mip": [
+    0,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_setup",
+   "scene": "room"
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "room",
+   "frame": 60,
+   "mip": [
+    0,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_setup",
+   "scene": "city"
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "city",
+   "frame": 60,
+   "mip": [
+    0,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "city",
+   "frame": 300,
+   "mip": [
+    0,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  },
+  {
+   "op": "demo3d_frame",
+   "scene": "city",
+   "frame": 120,
+   "mip": [
+    0,
+    3
+   ],
+   "subdiv": [
+    2,
+    3
+   ]
+  },
+  {
+   "op": "check",
+   "capture_min": 0.85
+  }
+ ]
+}

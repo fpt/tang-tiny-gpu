@@ -1113,6 +1113,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(REPO, "build", "hw"), help="frametest: where to save capture/diff")
     ap.add_argument("--link", choices=("spi", "hstx"), default="spi", help="how GPU commands are sent (hstx: harness v2)")
     ap.add_argument("--subdiv", help="demo / hstxdemo: split textured triangles on the host (demo3d.SUBDIV): ERR[:LEVELS], e.g. 2:3")
+    ap.add_argument("--mip", nargs="?", const="0", help="demo / hstxdemo: pick a mipmap level per triangle (demo3d.MIP): BIAS[:LEVELS], e.g. 0:3")
     ap.add_argument("--hstx", default="usb4", choices=sorted(HSTX_SPEEDS),
                     help="HSTX speed: clk_hstx source and divider (usb4 12MHz = 6MB/s ... sys2 75MHz = 37.5MB/s)")
     ap.add_argument("--words", type=int, default=32768, help="hstxbench: NOP words loaded into the Pico")
@@ -1124,6 +1125,10 @@ def main():
         import demo3d
         err, _, levels = a.subdiv.partition(":")
         demo3d.SUBDIV = {"err": float(err), "levels": int(levels) if levels else demo3d.SUBDIV_DEFAULT["levels"]}
+    if a.mip is not None:
+        import demo3d
+        bias, _, levels = a.mip.partition(":")
+        demo3d.MIP = {"bias": float(bias or 0), "levels": int(levels) if levels else demo3d.MIP_DEFAULT["levels"]}
 
     if a.command == "prog":
         if len(a.args) != 1:
