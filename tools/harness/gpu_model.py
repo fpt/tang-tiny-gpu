@@ -54,6 +54,7 @@ rtl/vdp/gpu.sv と同じ規則でコマンドを解釈し、表示される面�
       {"op": "clut", "index": 0, "colors": ["#rrggbb", ...]}   # CLUT (256 色、8 / 4bpp のテクスチャの色)
       {"op": "demo_setup"}, {"op": "demo_frame", "frame": 120, "mark": true}   # M9 のデモ (demo.py) のコマンド
       {"op": "demo3d_setup", "scene": "tunnel"}, {"op": "demo3d_frame", "scene": "tunnel", "frame": 60}   # G5 の 3D の場面 (demo3d.py)
+                                                 # "subdiv": [err, levels] で三角形をホストで割る (demo3d.SUBDIV)
       {"op": "md_frame", "variant": 0, "mark": true}   # メガドラの形式の決まったフレーム (md.py) を直したもの。印付きの 1 フレーム
   ]}
 タイル レイヤの形式は rtl/vdp/tile_layer.sv、スプライト (OAM) は rtl/vdp/sprite_layer.sv。VRAM・パレット・OAM は、
@@ -252,7 +253,13 @@ def encode(step):
         return demo3d.setup_words(step["scene"])
     if op == "demo3d_frame":
         import demo3d
-        return demo3d.frame_words(step["scene"], step["frame"])
+        saved = demo3d.SUBDIV
+        if "subdiv" in step:                       # [err, levels]: 三角形をホストで割る (demo3d.SUBDIV)
+            demo3d.SUBDIV = {"err": step["subdiv"][0], "levels": step["subdiv"][1]}
+        try:
+            return demo3d.frame_words(step["scene"], step["frame"])
+        finally:
+            demo3d.SUBDIV = saved
     if op in ("check", "check_marked"):
         return []
     raise ValueError(f"unknown op {op!r}")
