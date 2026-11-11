@@ -63,6 +63,7 @@ module tb_gpu;
     assign dq = dq_oe ? dq_out : 'z;
 
     gpu #(.SRC_W(SRC_W), .SRC_H(SRC_H), .FIFO_WORDS(FIFO_WORDS)) dut (
+        .ext_valid(1'b0), .ext_word(32'h0), .ext_ready(),
         .clk, .rst, .addr, .wdata, .we, .re, .rdata,
         .mem_req, .mem_we, .mem_addr, .mem_wdata, .mem_wmask, .mem_len, .mem_ack, .mem_wnext, .mem_rvalid,
         .mem_rdata(rdata32),

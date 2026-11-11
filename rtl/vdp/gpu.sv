@@ -102,6 +102,11 @@ module gpu #(
     input  logic        we,
     input  logic        re,
     output logic [7:0]  rdata,
+    // ワード単位のコマンドの入り口 (HSTX の受信、rtl/vdp/hstx_rx.sv)。ext_ready が 1 のクロックで ext_word を FIFO に入れる。
+    // レジスタ (CMD) からの 4 バイト目と同じクロックならレジスタを先にし、こちらは次のクロックに回す。満杯なら待たせる (捨てない)
+    input  logic        ext_valid,
+    input  logic [31:0] ext_word,
+    output logic        ext_ready,
     // SDRAM (sdram_arb 経由)
     output logic        mem_req,
     output logic        mem_we,
@@ -1111,10 +1116,20 @@ module gpu #(
     end
 
     // ================================================================ FIFO の書き込み側 (レジスタ)
+    logic reg_push, not_full;
+    assign reg_push  = we && addr == A_CMD && asm_cnt == 2'd3 && !flush;      // レジスタからの 4 バイト目
+    assign not_full  = count != (PTR_W + 1)'(FIFO_WORDS);
+    assign ext_ready = !reg_push && !flush && not_full;
+
     always_comb begin
         push      = 1'b0;
         push_word = {wdata, asm_bytes};
-        if (we && addr == A_CMD && asm_cnt == 2'd3 && !flush) push = (count != (PTR_W + 1)'(FIFO_WORDS));
+        if (reg_push) begin
+            push = not_full;
+        end else if (ext_valid && ext_ready) begin
+            push      = 1'b1;
+            push_word = ext_word;
+        end
     end
     assign flush = we && addr == A_STATUS && wdata[0];
 
@@ -1125,12 +1140,12 @@ module gpu #(
             overflow <= 1'b0;
         end else begin
             if (re && addr == A_STATUS) overflow <= 1'b0;
+            if (push) wr_ptr <= wr_ptr + 1'b1;
             if (flush) begin
                 asm_cnt <= '0;
             end else if (we && addr == A_CMD) begin
                 if (asm_cnt == 2'd3) begin
-                    if (push) wr_ptr <= wr_ptr + 1'b1;
-                    else      overflow <= 1'b1;
+                    if (!push) overflow <= 1'b1;
                 end else begin
                     asm_bytes[8 * asm_cnt +: 8] <= wdata;
                 end
